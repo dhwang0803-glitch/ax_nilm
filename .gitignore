@@ -205,3 +205,6 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Dataset staging (AI Hub 등 외부 대용량 원본/샘플/설명서 — git 추적 제외)
+Database/dataset_staging/
