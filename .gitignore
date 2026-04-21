@@ -208,3 +208,14 @@ __marimo__/
 
 # Dataset staging (AI Hub 등 외부 대용량 원본/샘플/설명서 — git 추적 제외)
 Database/dataset_staging/
+
+# Claude Code
+.claude/settings.local.json
+
+# Local design artifacts
+co_docs/
+
+# Secrets & credentials
+*.pem
+*.key
+credentials.json
