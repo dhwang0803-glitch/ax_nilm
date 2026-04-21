@@ -209,6 +209,9 @@ __marimo__/
 # Claude Code
 .claude/settings.local.json
 
+# Local design artifacts
+co_docs/
+
 # Secrets & credentials
 *.pem
 *.key
