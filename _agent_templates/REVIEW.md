@@ -42,11 +42,12 @@ find tests/ -name "test_*<module>*"
 ### 1. Correctness (로직·엣지케이스)
 - [ ] 변경된 함수의 입력 도메인 나열 (정상/경계/이상값)
 - [ ] 각 입력에 대해 코드 경로 추적, 빠진 분기가 있는지 확인
-- [ ] off-by-one, NULL/빈 컬렉션, 타입 가정 위반 점검
+- [ ] off-by-one, NULL/빈 배열, 타입 가정 위반 점검
+- [ ] 전력 프로파일(1440분) 인덱스 범위 초과 여부
 - **판정 기준**: 재현 가능한 버그 시나리오 → Critical, 이론적 가능성 → Major
 
 ### 2. Error handling (실패 경로)
-- [ ] diff에서 새로 추가된 외부 호출(API/IO/DB/파일) 목록 작성
+- [ ] diff에서 새로 추가된 외부 호출(KPX API/TimescaleDB/LLM API) 목록 작성
 - [ ] 각 호출마다 try/except 또는 폴백 존재 여부 확인
 - [ ] 예외가 삼켜지지 않는지(`except: pass`) 확인
 - **판정 기준**: 실패 시 데이터 손실/무한 대기 → Critical, 로그만 빠짐 → Minor
@@ -57,10 +58,10 @@ find tests/ -name "test_*<module>*"
 - **판정 기준**: 신규 분기에 대응 테스트 0건 → Critical, 부분 커버 → Major
 
 ### 4. Performance
-- [ ] 루프 안의 외부 호출 / N+1 패턴
-- [ ] 캐시 키 충돌 가능성
-- [ ] 불필요한 LLM 호출 (규칙 기반으로 충분한지)
-- [ ] ThreadPoolExecutor `max_workers` vs API rate limit
+- [ ] TimescaleDB 쿼리가 루프 안에 있는지 (N+1 패턴)
+- [ ] 1440분 프로파일 NumPy 처리 시 불필요한 복사 여부
+- [ ] LLM API 호출이 중복되는지 (캐싱 필요 여부)
+- [ ] KPX API Rate Limit 대비 backoff 전략 존재 여부
 - **판정 기준**: 운영 부하에서 실측 가능한 저하 → Major, 미세 → Minor
 
 ### 5. API / 인터페이스 설계
@@ -75,7 +76,7 @@ find tests/ -name "test_*<module>*"
 - **판정 기준**: 항상 Minor (단, REFACTOR 위임 권고로 표시)
 
 ### 7. 보안 위임
-- [ ] diff에 시크릿·외부 입력·인증 로직이 닿으면 `SECURITY_AUDITOR` 호출 필요로 표시
+- [ ] diff에 시크릿·외부 입력·인증 로직·가구 전력 데이터(PII)가 닿으면 `SECURITY_AUDITOR` 호출 필요로 표시
 - 직접 판정하지 않는다.
 
 ---

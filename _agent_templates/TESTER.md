@@ -2,48 +2,67 @@
 
 ## 역할
 Developer Agent가 구현 파일을 작성한 후, 테스트를 실제로 실행하고 결과를 수집한다.
-Ollama 로컬 LLM과 VPC PostgreSQL 양쪽 모두 접속하여 통합 테스트를 수행한다.
+TimescaleDB/PostgreSQL 및 외부 LLM API 양쪽 모두 접속하여 통합 테스트를 수행한다.
 
 ---
 
 ## 접속 정보 로드
 
 ```bash
-# VPC DB 접속 (.env 파일)
+# DB 및 API 접속 정보 (.env 파일)
 export $(grep -v '^#' .env | xargs)
 
-# RAG API 키 (RAG/config/api_keys.env)
-export $(grep -v '^#' RAG/config/api_keys.env | xargs)
+# LLM API 키 (브랜치/config/api_keys.env)
+export $(grep -v '^#' config/api_keys.env | xargs)
 
-# Ollama 연결 확인
-curl -s http://localhost:11434/api/tags | python -c "import sys,json; print('PASS' if json.load(sys.stdin) else 'FAIL')"
+# TimescaleDB 연결 확인
+python -c "import psycopg2; psycopg2.connect(dsn='$DATABASE_URL'); print('PASS')"
+
+# LLM API 연결 확인 (kpx-integration-settlement RAG 모듈)
+python -c "import openai; openai.api_key='$OPENAI_API_KEY'; print('PASS')"
 ```
 
 ---
 
-## Phase별 실행 순서
+## 브랜치별 실행 순서
 
-### Phase 1 (Setup & Pilot)
+### kpx-integration-settlement
+
 ```bash
-# 패키지 설치 확인
-conda run -n myenv python -c "import requests, wikipedia, sentence_transformers; print('OK')"
+# Phase 1: KPX API 수신 테스트
+python -m pytest kpx-integration-settlement/tests/test_phase1_kpx_api.py -v 2>&1
 
-# 테스트 실행
-conda run -n myenv python -m pytest RAG/tests/test_phase1_pilot.py -v 2>&1
+# Phase 2: 절감량 산출 + 정산 데이터 생성 테스트
+python -m pytest kpx-integration-settlement/tests/test_phase2_settlement.py -v 2>&1
+
+# Phase 3: RAG LLM 보고서 생성 테스트
+python -m pytest kpx-integration-settlement/tests/test_phase3_rag.py -v 2>&1
 ```
 
-### Phase 2 (HIGH Priority)
-```bash
-# 파이프라인 배치 테스트 (샘플 10건으로 먼저 검증)
-conda run -n myenv python -m pytest RAG/tests/test_phase2_high.py -v 2>&1
+### nilm-engine
 
-# 전체 실행 (검증 후)
-conda run -n myenv python RAG/src/rag_pipeline.py --column director --dry-run
+```bash
+# 신호처리 + 가전 분해 테스트
+python -m pytest nilm-engine/tests/ -v 2>&1
 ```
 
-### Phase 3 (Quality)
+### anomaly-detection
+
 ```bash
-conda run -n myenv python -m pytest RAG/tests/test_phase3_quality.py -v 2>&1
+python -m pytest anomaly-detection/tests/ -v 2>&1
+```
+
+### dr-savings-prediction
+
+```bash
+python -m pytest dr-savings-prediction/tests/ -v 2>&1
+```
+
+### Database
+
+```bash
+# 스키마 마이그레이션 + Repository 테스트
+python -m pytest Database/tests/ -v 2>&1
 ```
 
 ---
@@ -51,8 +70,7 @@ conda run -n myenv python -m pytest RAG/tests/test_phase3_quality.py -v 2>&1
 ## 결과 파싱 규칙
 
 ```bash
-# pytest 결과에서 PASS/FAIL 추출
-output=$(conda run -n myenv python -m pytest RAG/tests/test_phase1_pilot.py -v 2>&1)
+output=$(python -m pytest {테스트 파일} -v 2>&1)
 
 pass_count=$(echo "$output" | grep -c " PASSED")
 fail_count=$(echo "$output" | grep -c " FAILED")
@@ -63,12 +81,17 @@ echo "PASS: $pass_count, FAIL: $fail_count, SKIP: $skip_count"
 
 ---
 
-## Ollama 미실행 시 처리
+## LLM API 미연결 시 처리
 
-Ollama 서버가 미실행 상태이면:
-- P1-01 FAIL → LLM 의존 테스트 전체 SKIP
-- SKIP은 FAIL로 처리하지 않음 (단, 보고서에 "Ollama 실행 필요" 기록)
-- Orchestrator에 즉시 보고: "Ollama 서버 미실행 — 사용자가 `ollama serve` 실행 필요"
+LLM API(OpenAI 등) 호출 불가 상태이면:
+- LLM 의존 테스트 전체 SKIP
+- SKIP은 FAIL로 처리하지 않음 (단, 보고서에 "LLM API 연결 필요" 기록)
+- Orchestrator에 즉시 보고: "LLM API 미연결 — `.env`의 OPENAI_API_KEY 확인 필요"
+
+## TimescaleDB 미연결 시 처리
+
+- DB 의존 테스트 전체 FAIL 처리 (데이터 없이 진행 불가)
+- Orchestrator에 즉시 보고 후 중단
 
 ---
 
@@ -76,7 +99,7 @@ Ollama 서버가 미실행 상태이면:
 
 ```
 [Tester 실행 결과]
-- 실행 환경: Python 3.12 (myenv), Ollama {버전 또는 미실행}
+- 실행 환경: Python {버전}, TimescaleDB {연결 상태}, LLM API {연결 상태}
 - 실행 파일: [파일명 목록]
 - 전체 테스트: X건
 - PASS: X건
@@ -97,6 +120,6 @@ FAIL 항목:
 ## 주의사항
 
 1. `.env` 및 `api_keys.env`의 접속 정보를 로그나 출력에 노출하지 않는다
-2. 파이럿 100건 실행은 실제 API를 호출하므로 Rate Limit 초과 주의
-3. VPC 연결 실패 시 재시도 없이 즉시 Orchestrator에 보고한다
-4. 실행 환경: `conda activate myenv` (전 브랜치 공통, Python 3.12)
+2. 전력 소비 데이터(parquet)는 테스트 픽스처로만 사용하며 git에 포함하지 않는다
+3. TimescaleDB 연결 실패 시 재시도 없이 즉시 Orchestrator에 보고한다
+4. KPX API 테스트는 실제 전력거래소 연결이 아닌 Mock 서버로 수행한다
