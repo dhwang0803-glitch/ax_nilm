@@ -27,7 +27,7 @@ Database/tests/
 ├── conftest.py                    ← test_db_url fixture, 각 테스트별 격리 스키마
 ├── schemas/
 │   ├── test_core_tables.py        ← households, appliance_types, household_channels
-│   ├── test_timeseries.py         ← power_1min hypertable, power_1day cagg
+│   ├── test_timeseries.py         ← power_1min hypertable, power_1hour cagg
 │   └── test_activity_intervals.py ← EXCLUDE gist 제약
 ├── repositories/
 │   ├── test_power_repository.py
@@ -108,7 +108,7 @@ async def test_activity_intervals_exclude_overlap(repo):
 ```python
 @pytest.mark.asyncio
 async def test_power_repository_read_range_7d_boundary(repo):
-    """7일 경계에서 power_1min 과 power_1day 가 연속으로 읽힌다."""
+    """7일 경계에서 power_1min 과 power_1hour 가 연속으로 읽힌다."""
     # 1) 10일치 샘플 데이터 준비 (1분 해상도)
     await _seed_minute_data(repo, days=10)
     await repo.refresh_cagg()

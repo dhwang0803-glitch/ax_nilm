@@ -123,8 +123,8 @@ Continuous aggregate 리프레시 직후의 retention 순서는 운영 정책이
 
 ## 시계열 쿼리 작성 원칙
 
-1. `power_1min` / `power_1day` 조회 시 항상 `(household_id, channel_num, bucket_ts)` 파티셔닝 키를 WHERE 절 앞쪽에 둔다 — TimescaleDB chunk pruning 활성화 조건
-2. 최근 7일 이내는 `power_1min`, 그 이전은 `power_1day` 에서 읽도록 Repository 내부에서 분기 — `PowerRepository.read_range(start, end)` 가 자동 라우팅
+1. `power_1min` / `power_1hour` 조회 시 항상 `(household_id, channel_num, bucket_ts)` 파티셔닝 키를 WHERE 절 앞쪽에 둔다 — TimescaleDB chunk pruning 활성화 조건
+2. 최근 7일 이내는 `power_1min`, 그 이전은 `power_1hour` 에서 읽도록 Repository 내부에서 분기 — `PowerRepository.read_range(start, end)` 가 자동 라우팅
 3. 전 기간 UNION 뷰가 필요하면 `schemas/` 에 `power_combined` 뷰로 별도 정의 (라우팅은 애플리케이션이 아닌 DB 에 위임 가능)
 4. `activity_intervals` 조회는 `tstzrange && tstzrange('[start,end)')` GiST 인덱스를 타도록 작성
 

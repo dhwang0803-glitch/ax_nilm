@@ -44,7 +44,7 @@ find Database/tests -name "test_*<module>*"
 ### 1. Correctness (로직·엣지케이스)
 
 - [ ] 변경된 Repository 메서드의 입력 도메인 나열 (정상 / 시간범위 경계 / NULL / 빈 컬렉션)
-- [ ] `power_1min` vs `power_1day` 라우팅 경계(7일) 근처 입력에서 올바른 테이블 선택 여부
+- [ ] `power_1min` vs `power_1hour` 라우팅 경계(7일) 근처 입력에서 올바른 테이블 선택 여부
 - [ ] `time_bucket()` 경계 / DST / UTC 처리 누락 없는지 (모든 `bucket_ts` 는 UTC 저장 원칙)
 - [ ] DDL 의 NOT NULL / CHECK / UNIQUE / EXCLUDE 제약이 ETL 입력과 모순되지 않는지
 - [ ] off-by-one, NULL/빈 컬렉션, 타입 가정 위반 점검

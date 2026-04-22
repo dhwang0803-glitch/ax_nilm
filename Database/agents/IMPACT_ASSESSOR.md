@@ -93,7 +93,7 @@ git diff main...HEAD --name-only | grep '^Database/' | \
 |-----------|--------------|
 | `API_Server` | Repository 인터페이스 / UI 집계 쿼리 / DR 정산용 일별 집계 |
 | `Execution_Engine` (NILM 엔진) | `household_channels`·`appliance_types` 메타 조회 경로. 30Hz 는 DB 우회 → DB 변경 영향 적지만, 메타 스키마 변경 시 영향 |
-| 프론트 / 리포트 | `power_1day` 계층 구조 변경 시 차트·리포트 영향 |
+| 프론트 / 리포트 | `power_1hour` 계층 구조 변경 시 차트·리포트 영향 |
 
 ABC 인터페이스(`PowerRepository`, `HouseholdRepository`, `PIIRepository`, `ActivityRepository`, `IngestionLogRepository`) 중 하나라도 시그니처가 바뀌면 **자동 🔴 HIGH**.
 

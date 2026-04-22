@@ -28,7 +28,7 @@
 
 - [ ] 루프 안 쿼리 제거 (N+1 → 배치 `IN (...)` 조회)
 - [ ] `time_bucket()` 호출이 WHERE 절 파티셔닝 키 앞에 오지 않는지 — chunk pruning 저해
-- [ ] `power_1min` vs `power_1day` 라우팅 경계 (7일 기준)가 한 곳에서만 정의되는지
+- [ ] `power_1min` vs `power_1hour` 라우팅 경계 (7일 기준)가 한 곳에서만 정의되는지
 - [ ] 대용량 INSERT 가 `INSERT ... VALUES` 대신 `copy_records_to_table()` / `executemany` 를 사용하는지
 - [ ] 불필요한 `SELECT *` 제거 — 필요한 컬럼만 지정
 

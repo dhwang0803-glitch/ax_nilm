@@ -123,22 +123,27 @@ CREATE INDEX idx_ingestion_log_lookup
 
 COMMIT;
 
--- ─── 1일 다운샘플 연속집계 (Continuous Aggregate) ──────────────────────
+-- ─── 1시간 다운샘플 연속집계 (Continuous Aggregate) ─────────────────────
 -- 정책:
 --   * 최근 7일: power_1min 에 1분 해상도로 보관 (hot tier)
---   * 7일 이상: power_1day 에 1일 해상도로만 보관 (cold tier, 1분 원본은 retention 으로 삭제)
--- 집계 규칙(1분 → 1일)은 30Hz → 1분 때와 동일한 방식:
+--   * 7일 이상: power_1hour 에 1시간 해상도로 보관 (cold tier, 1분 원본은 retention 으로 삭제)
+-- 1일 집계가 아닌 1시간 집계를 택한 이유: 시간대별 이상탐지 패턴
+-- (예: "가구A가 평소 08~10시에 B 가전 사용") 을 cold tier 에서도 유지해야 하므로
+-- REQ-002 (이상탐지) 요건상 24× 더 높은 해상도가 필요. 전구간 1시간 보관해도
+-- ~120 MB 수준으로 저장 부담은 여전히 작음.
+--
+-- 집계 규칙(1분 → 1시간)은 30Hz → 1분 때와 동일한 방식:
 --   * active_power     : avg = avg(avg),  min = min(min),  max = max(max)
---   * energy_wh        : sum (하루 누적 Wh)
+--   * energy_wh        : sum (1시간 누적 Wh)
 --   * 나머지 전기 특성 : avg(avg) (1분 버킷당 sample_count 가 거의 균일하므로 단순 평균으로 근사)
---   * sample_count     : sum (하루 원시 샘플 수, 정상 30Hz × 86,400s = 2,592,000)
+--   * sample_count     : sum (1시간 원시 샘플 수, 정상 30Hz × 3,600s = 108,000)
 --
 -- CAUTION: Continuous aggregate 는 트랜잭션 블록 외부에서 생성해야 함 (Timescale 제약).
 
-CREATE MATERIALIZED VIEW power_1day
+CREATE MATERIALIZED VIEW power_1hour
 WITH (timescaledb.continuous) AS
 SELECT
-    time_bucket(INTERVAL '1 day', bucket_ts)          AS day_bucket,
+    time_bucket(INTERVAL '1 hour', bucket_ts)         AS hour_bucket,
     household_id,
     channel_num,
     avg(active_power_avg)                             AS active_power_avg,
@@ -153,39 +158,40 @@ SELECT
     avg(power_factor_avg)                             AS power_factor_avg,
     avg(phase_difference_avg)                         AS phase_difference_avg,
     sum(sample_count)                                 AS sample_count,
-    count(*)                                          AS minute_bucket_count  -- 정상 1,440
+    count(*)                                          AS minute_bucket_count  -- 정상 60
 FROM power_1min
-GROUP BY day_bucket, household_id, channel_num
+GROUP BY hour_bucket, household_id, channel_num
 WITH NO DATA;
 
-CREATE INDEX idx_power_1day_lookup
-    ON power_1day (household_id, channel_num, day_bucket DESC);
+CREATE INDEX idx_power_1hour_lookup
+    ON power_1hour (household_id, channel_num, hour_bucket DESC);
 
-COMMENT ON MATERIALIZED VIEW power_1day IS
-    '1일 다운샘플 연속집계 — 7일 이상 지난 데이터의 장기 저장 계층. '
-    'power_1min 이 retention 으로 삭제되기 전 마지막 refresh 에서 스냅샷.';
+COMMENT ON MATERIALIZED VIEW power_1hour IS
+    '1시간 다운샘플 연속집계 — 7일 이상 지난 데이터의 장기 저장 계층. '
+    'power_1min 이 retention 으로 삭제되기 전 마지막 refresh 에서 스냅샷. '
+    '시간대별 이상탐지 패턴 보존을 위해 1일이 아닌 1시간 해상도 채택 (REQ-002).';
 
 -- ─── 리프레시 + 보존 정책 (수동 실행: migrations/ 또는 운영 스크립트) ──
 --
--- 1) 연속집계 자동 리프레시 (매일 1회):
+-- 1) 연속집계 자동 리프레시:
 --    - start_offset 30d: 지난 30일 범위 재계산 (지각 도착 데이터 반영)
---    - end_offset 1d   : 당일 미완성 버킷 제외
---    - schedule 1d     : 하루에 한 번 실행
+--    - end_offset 2h   : 최근 2시간 (미완성 시간 버킷) 제외
+--    - schedule 1h     : 한 시간에 한 번 실행 (1시간 버킷이 채워지는 대로 반영)
 --
--- SELECT add_continuous_aggregate_policy('power_1day',
+-- SELECT add_continuous_aggregate_policy('power_1hour',
 --     start_offset       => INTERVAL '30 days',
---     end_offset         => INTERVAL '1 day',
---     schedule_interval  => INTERVAL '1 day');
+--     end_offset         => INTERVAL '2 hours',
+--     schedule_interval  => INTERVAL '1 hour');
 --
 -- 2) hot tier retention: 7일 이상 지난 1분 chunk 삭제.
 --    순서 중요: cagg 가 해당 범위를 이미 refresh 한 상태에서 retention 실행.
---    (1) 이 매일 돌고 (2) 는 7일 경계에서 drop → cagg 에는 이미 반영 완료.
+--    (1) 이 시간 단위로 돌고 (2) 는 7일 경계에서 drop → cagg 에는 이미 반영 완료.
 --
 -- SELECT add_retention_policy('power_1min', INTERVAL '7 days');
 --
--- 3) (선택) power_1day 자체 압축 — 1년 이상 지난 chunk:
---    ALTER MATERIALIZED VIEW power_1day SET (
+-- 3) (선택) power_1hour 자체 압축 — 1년 이상 지난 chunk:
+--    ALTER MATERIALIZED VIEW power_1hour SET (
 --        timescaledb.compress = true,
 --        timescaledb.compress_segmentby = 'household_id, channel_num'
 --    );
---    SELECT add_compression_policy('power_1day', INTERVAL '365 days');
+--    SELECT add_compression_policy('power_1hour', INTERVAL '365 days');

@@ -22,7 +22,7 @@
 
 **저장 정책 (ADR-001 요약)**:
 - 30Hz 원시 전력 데이터는 **DB에 저장하지 않는다**. NILM 엔진이 로컬/스트림에서 직접 읽고 폐기.
-- DB 는 2단 해상도: `power_1min` (hot, 7일) + `power_1day` (cold, continuous aggregate).
+- DB 는 2단 해상도: `power_1min` (hot, 7일) + `power_1hour` (cold, continuous aggregate — 시간대별 이상탐지 패턴 보존).
 - NILM 엔진 분해 결과도 DB 미적재 — AI Hub 라벨(`activity_intervals`)과 평가 비교만.
 
 ## 다운스트림 소비자
@@ -40,7 +40,7 @@ Database/
 ├── migrations/   ← 스키마 변경 이력 (YYYYMMDD_설명.sql) + cagg/retention/compression policy
 ├── src/          ← Repository 구현체 (import 전용)
 │   ├── repositories/
-│   │   ├── power_repository.py         ← power_1min / power_1day 조회
+│   │   ├── power_repository.py         ← power_1min / power_1hour 조회
 │   │   ├── household_repository.py     ← households + household_channels
 │   │   ├── pii_repository.py           ← household_pii (AES-256, 권한 분리)
 │   │   ├── activity_repository.py      ← activity_intervals 라벨
@@ -96,7 +96,7 @@ from cryptography.fernet import Fernet   # PII 암호화
 | 테이블 | 설명 |
 |--------|------|
 | `power_1min` | 1분 집계 hypertable (hot, 7일 retention). ch01~ch23 공용. avg/min/max + energy_wh + sample_count |
-| `power_1day` | 1일 다운샘플 continuous aggregate (cold). `power_1min` 에서 매일 자동 리프레시 |
+| `power_1hour` | 1시간 다운샘플 continuous aggregate (cold). `power_1min` 에서 시간 단위 자동 리프레시. 시간대별 이상탐지 패턴 보존 (REQ-002) |
 
 ### 라벨·운영
 
@@ -113,8 +113,8 @@ CREATE UNIQUE INDEX idx_power_1min_pk
     ON power_1min (household_id, channel_num, bucket_ts);
 CREATE INDEX idx_power_1min_recent
     ON power_1min (household_id, channel_num, bucket_ts DESC);
-CREATE INDEX idx_power_1day_lookup
-    ON power_1day (household_id, channel_num, day_bucket DESC);
+CREATE INDEX idx_power_1hour_lookup
+    ON power_1hour (household_id, channel_num, hour_bucket DESC);
 
 -- 라벨 조회 / 겹침 차단
 CREATE INDEX idx_activity_intervals_lookup
@@ -128,14 +128,14 @@ CREATE INDEX idx_household_channels_appliance ON household_channels(appliance_co
 
 ## 운영 정책 (cagg + retention)
 
-**순서 민감**: `power_1day` cagg 가 매일 리프레시되어 과거 구간을 요약한 후, `power_1min` retention 이 7일 초과 chunk 를 드롭한다.
+**순서 민감**: `power_1hour` cagg 가 시간 단위로 리프레시되어 과거 구간을 요약한 후, `power_1min` retention 이 7일 초과 chunk 를 드롭한다.
 
 ```sql
--- 1) 1일 다운샘플 자동 리프레시 (매일)
-SELECT add_continuous_aggregate_policy('power_1day',
+-- 1) 1시간 다운샘플 자동 리프레시 (시간 단위)
+SELECT add_continuous_aggregate_policy('power_1hour',
     start_offset       => INTERVAL '30 days',
-    end_offset         => INTERVAL '1 day',
-    schedule_interval  => INTERVAL '1 day');
+    end_offset         => INTERVAL '2 hours',
+    schedule_interval  => INTERVAL '1 hour');
 
 -- 2) hot tier 7일 retention
 SELECT add_retention_policy('power_1min', INTERVAL '7 days');
