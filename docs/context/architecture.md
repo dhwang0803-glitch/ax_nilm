@@ -72,7 +72,7 @@ flowchart TD
 | 코드 브랜치 | 역할 | 기술 스택 (계획) |
 |-------------|------|------------------|
 | `Database` | 데이터 레이어 | PostgreSQL 16 + TimescaleDB, SQLAlchemy async, Fernet(AES-256) |
-| `Execution_Engine` | NILM 분해·이상탐지 엔진 | PyTorch, scikit-tda, GUDHI, PyWavelets, OpenAI API |
+| `Execution_Engine` | NILM 분해·이상탐지 엔진 | PyTorch, scikit-tda, GUDHI, PyWavelets, OpenAI API (GPT-4o-mini, 익명화 후 사용) |
 | `API_Server` | FastAPI 백엔드 | FastAPI, JWT/OAuth2, Redis, Celery |
 | `Frontend` | 웹/모바일 UI | React, React Native, Recharts, Tailwind |
 
