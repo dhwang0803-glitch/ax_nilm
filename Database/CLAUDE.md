@@ -9,6 +9,7 @@
 - 파일 맵: [`docs/context/MAP.md`](../docs/context/MAP.md)
 - 스키마 설계 근거: [`docs/schema_design.md`](./docs/schema_design.md)
 - 데이터셋 명세 (AI Hub 71685): [`docs/dataset_spec.md`](./docs/dataset_spec.md)
+- NILM 모델 ↔ DB 인터페이스: [`docs/model_interface.md`](./docs/model_interface.md)
 - 다운스트림 소비자: `CLAUDE_API_Server.md`, `CLAUDE_Execution_Engine.md` (예정)
 
 ## 모듈 역할
@@ -23,7 +24,7 @@
 **저장 정책 (ADR-001 요약)**:
 - 30Hz 원시 전력 데이터는 **DB에 저장하지 않는다**. NILM 엔진이 로컬/스트림에서 직접 읽고 폐기.
 - DB 는 2단 해상도: `power_1min` (hot, 7일) + `power_1hour` (cold, continuous aggregate — 시간대별 이상탐지 패턴 보존).
-- NILM 엔진 분해 결과도 DB 미적재 — AI Hub 라벨(`activity_intervals`)과 평가 비교만.
+- **NILM 모델 출력은 구간 기반으로 DB 에 적재** (`appliance_status_intervals`). 실서비스/이상탐지 입력원이자 실시간 알림 트리거. `activity_intervals` (AI Hub ground truth) 와 분리 병행 — 세부: `docs/model_interface.md`.
 
 ## 다운스트림 소비자
 
@@ -40,11 +41,12 @@ Database/
 ├── migrations/   ← 스키마 변경 이력 (YYYYMMDD_설명.sql) + cagg/retention/compression policy
 ├── src/          ← Repository 구현체 (import 전용)
 │   ├── repositories/
-│   │   ├── power_repository.py         ← power_1min / power_1hour 조회
-│   │   ├── household_repository.py     ← households + household_channels
-│   │   ├── pii_repository.py           ← household_pii (AES-256, 권한 분리)
-│   │   ├── activity_repository.py      ← activity_intervals 라벨
-│   │   └── ingestion_log_repository.py ← ETL 이력
+│   │   ├── power_repository.py              ← power_1min / power_1hour 조회
+│   │   ├── household_repository.py          ← households + household_channels
+│   │   ├── pii_repository.py                ← household_pii (AES-256, 권한 분리)
+│   │   ├── activity_repository.py           ← activity_intervals 라벨 (AI Hub)
+│   │   ├── nilm_inference_repository.py     ← appliance_status_intervals + codes (CNN+TDA 출력)
+│   │   └── ingestion_log_repository.py      ← ETL 이력
 │   └── models/   ← SQLAlchemy ORM 모델
 ├── scripts/      ← ingest_aihub.py, migrate.py, validate_sample.py, extract_pdf_text.py
 ├── tests/        ← pytest (실제 DB 연결, 스키마·ETL 검증)
@@ -98,11 +100,13 @@ from cryptography.fernet import Fernet   # PII 암호화
 | `power_1min` | 1분 집계 hypertable (hot, 7일 retention). ch01~ch23 공용. avg/min/max + energy_wh + sample_count |
 | `power_1hour` | 1시간 다운샘플 continuous aggregate (cold). `power_1min` 에서 시간 단위 자동 리프레시. 시간대별 이상탐지 패턴 보존 (REQ-002) |
 
-### 라벨·운영
+### 라벨·모델 출력·운영
 
 | 테이블 | 설명 |
 |--------|------|
-| `activity_intervals` | 가전 ON 구간 (AI Hub 라벨). EXCLUDE gist 로 (가구·채널 내) 구간 겹침 차단 |
+| `activity_intervals` | **Ground truth** — AI Hub 제공 ON 구간 라벨. EXCLUDE gist 로 (가구·채널) 구간 겹침 차단. 초 정밀도 유지 |
+| `appliance_status_intervals` | **모델 출력** — CNN+TDA 하이브리드 NILM 의 가전 상태 구간. INSERT = 상태 전환 이벤트. `end_ts IS NULL` = 진행 중. `model_version` 축으로 A/B 병존. `confidence < 0.6` 은 이상탐지 집계 제외 (REQ-001) |
+| `appliance_status_codes` | `status_code` 의미 정의 마스터 (off/active/wash/spin/compressor_on 등). 모델 팀이 확정 후 seed INSERT |
 | `ingestion_log` | ETL 파일별 적재 이력 (source_file UNIQUE, raw/agg 행수, status) |
 
 ## 핵심 인덱스
@@ -120,6 +124,14 @@ CREATE INDEX idx_power_1hour_lookup
 CREATE INDEX idx_activity_intervals_lookup
     ON activity_intervals (household_id, channel_num, start_ts);
 -- + EXCLUDE USING gist 제약 (002_timeseries_tables.sql)
+
+-- 모델 출력: "현재 상태" partial index + 전환 히스토리
+CREATE INDEX idx_status_open
+    ON appliance_status_intervals (household_id, channel_num, model_version)
+    WHERE end_ts IS NULL;
+CREATE INDEX idx_status_history
+    ON appliance_status_intervals (household_id, channel_num, start_ts DESC);
+-- + EXCLUDE USING gist (household_id, channel_num, model_version, tstzrange) — 004_nilm_inference_tables.sql
 
 -- 메타
 CREATE INDEX idx_households_house_type ON households(house_type);
@@ -145,7 +157,9 @@ cagg 가 멈추면 retention 도 멈춰야 한다 → 운영 헬스체크 필수
 
 ## Repository 패턴
 
-`API_Server` 는 ABC 인터페이스(`PowerRepository`, `HouseholdRepository`, `PIIRepository`, `ActivityRepository`, `IngestionLogRepository`) 에만 의존. 이 브랜치는 구현체를 제공한다.
+`API_Server` 는 ABC 인터페이스(`PowerRepository`, `HouseholdRepository`, `PIIRepository`, `ActivityRepository`, `NILMInferenceRepository`, `IngestionLogRepository`) 에만 의존. 이 브랜치는 구현체를 제공한다.
+
+`NILMInferenceRepository` 는 **상태 전환 트랜잭션**을 추상화한다 — `record_transition(household_id, channel_num, transition_ts, new_status, confidence, model_version)` 호출 시 기존 열린 구간의 `end_ts` UPDATE + 신규 INSERT 를 단일 트랜잭션으로 수행.
 
 테스트 시 `InMemoryPowerRepository` 등으로 대체 가능한 구조 유지.
 
@@ -171,9 +185,11 @@ cagg 가 멈추면 retention 도 멈춰야 한다 → 운영 헬스체크 필수
 
 ```
 migrations/
-├── 20260421_initial_schema.sql          — schemas/001~003 통합 적용
-├── 20260421_compression_retention.sql   — cagg refresh + retention policy
-└── 20260501_add_anomaly_events.sql      — (예정) 이상 이벤트 테이블 (REQ-002)
+├── 20260421_initial_schema.sql           — schemas/001~003 통합 적용
+├── 20260421_compression_retention.sql    — cagg refresh + retention policy
+├── 20260422_add_nilm_inference.sql       — schemas/004 적용 (appliance_status_*)
+├── YYYYMMDD_seed_appliance_status_codes.sql — (예정) 모델 팀 상태 세트 확정 후
+└── 20260501_add_anomaly_events.sql       — (예정) 이상 이벤트 테이블 (REQ-002)
 ```
 
 ## 인터페이스
