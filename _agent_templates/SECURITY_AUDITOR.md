@@ -5,7 +5,10 @@
 **개인식별 정보·자격증명·실제 인프라 정보**가 코드나 스테이징 영역에 노출되었는지 점검하고,
 위반 항목이 있으면 즉시 차단한다.
 
-API_Server, Database, Execution_Engine, Frontend 등 **모든 브랜치에 적용**한다.
+모든 브랜치(Database, nilm-engine, anomaly-detection, dr-savings-prediction, kpx-integration-settlement, API_Server, Frontend)에 적용한다.
+
+> **NILM 특이사항**: 가구별 전력 소비 데이터는 개인식별 가능 정보(PII)이므로 AES-256 암호화 저장 필수 (REQ-007).
+> KPX API 키, OpenAI API 키는 하드코딩 절대 금지.
 
 ---
 
@@ -40,7 +43,7 @@ git diff HEAD~1 HEAD --name-only --diff-filter=ACM
 
 ```bash
 grep -rn --include="*.py" \
-  -iE "(api_key|password|secret|token|passwd|pwd)\s*=\s*['\"][^'\"]{6,}['\"]" \
+  -iE "(api_key|password|secret|token|passwd|pwd|kpx_key|openai_key)\s*=\s*['\"][^'\"]{6,}['\"]" \
   <대상 파일들>
 ```
 
@@ -61,11 +64,11 @@ grep -rn --include="*.py" \
 
 추출된 라인에서 기본값(두 번째 인자)이 아래에 해당하면 **FAIL**:
 - 실제 IP 패턴: `\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`
-- DB명 패턴: `localhost`, `postgres` 이외의 특정 DB명 (예: `myapp_db`, `prod_db` 등 프로젝트 전용 DB명)
-- 사용자명 패턴: `postgres` 이외의 특정 사용자명 (예: `admin`, `dbadmin` 등 기본값이 아닌 사용자명)
+- DB명 패턴: `localhost`, `postgres` 이외의 특정 DB명
+- 사용자명 패턴: `postgres` 이외의 특정 사용자명
 
 허용되는 기본값(PASS):
-- `"localhost"`, `"5432"`, `"postgres"`, `""`, `"http://localhost:11434"`, `"0.0.0.0"`
+- `"localhost"`, `"5432"`, `"postgres"`, `""`, `"0.0.0.0"`
 
 ---
 
@@ -128,6 +131,8 @@ cat .gitignore
 - `*.key`
 - `credentials.json`
 - `.claude/settings.local.json`
+- `*.parquet` (전력 소비 원시 데이터 — PII)
+- `*.joblib` (학습 모델 — 가구 패턴 포함 가능)
 
 하나라도 없으면 → **FAIL**
 
@@ -142,34 +147,32 @@ grep -rn --include="*.py" \
 ```
 
 **판정 기준**:
-- 모듈 최상단 상수(`DEFAULT_*`, `MODEL_PATH` 등)이고 CLI 인자(`argparse`)로 덮어쓸 수 있으면 → **WARNING** (허용)
+- 모듈 최상단 상수이고 CLI 인자(`argparse`)로 덮어쓸 수 있으면 → **WARNING** (허용)
 - 함수 내부 직접 사용 → **FAIL**
 
-판정 방법: 해당 라인이 함수 안인지 확인
+---
+
+### [S09] 가구 전력 데이터(PII) 암호화 여부 — WARNING
+
+전력 소비 데이터를 DB에 저장하는 코드에서 AES-256 암호화 적용 여부 확인 (REQ-007).
+
 ```bash
-# 라인 주변 컨텍스트 확인 (-B5: 위 5줄)
-grep -n "C:/Users/" <파일> | while read line; do
-  lineno=$(echo "$line" | cut -d: -f1)
-  # lineno 위 5줄에 'def ' 패턴이 있으면 함수 내부
-done
+grep -rn --include="*.py" "INSERT\|save\|write" <대상 파일들> | grep -i "power\|profile\|consumption"
 ```
+
+암호화 함수(`encrypt`, `AES`, `Fernet` 등) 없이 직접 저장 → **WARNING** (보안팀 검토 권고)
 
 ---
 
 ## 전체 실행 스크립트
 
-아래 스크립트를 Bash 도구로 실행한다. `TARGET_FILES`는 Step 0에서 수집한 파일 목록으로 대체한다.
-
 ```bash
 #!/usr/bin/env bash
-# 프로젝트 루트에서 실행 (git repo 루트)
-
 echo "=== Security Audit 시작 ==="
 echo "점검 시각: $(date '+%Y-%m-%d %H:%M')"
 FAIL_COUNT=0
 WARN_COUNT=0
 
-# Step 0: 점검 대상 파일 수집
 STAGED=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null)
 MODIFIED=$(git diff HEAD --name-only --diff-filter=ACM 2>/dev/null)
 TARGET_PY=$(echo -e "${STAGED}\n${MODIFIED}" | grep '\.py$' | sort -u)
@@ -183,12 +186,10 @@ echo "---"
 
 # S01: 하드코딩 자격증명
 result=$(echo "$TARGET_PY" | xargs grep -n \
-  -iE "(api_key|password|secret|token|passwd|pwd)\s*=\s*['\"][^'\"]{6,}['\"]" 2>/dev/null \
+  -iE "(api_key|password|secret|token|passwd|pwd|kpx_key|openai_key)\s*=\s*['\"][^'\"]{6,}['\"]" 2>/dev/null \
   | grep -viE "(os\.getenv|dotenv|config\.get|example|sample|test|placeholder)")
 if [ -n "$result" ]; then
-  echo "[S01 FAIL] 하드코딩 자격증명 탐지"
-  echo "$result"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+  echo "[S01 FAIL] 하드코딩 자격증명 탐지"; echo "$result"; FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   echo "[S01 PASS] 하드코딩 자격증명"
 fi
@@ -196,11 +197,9 @@ fi
 # S02: os.getenv() 실제 인프라 기본값
 result=$(echo "$TARGET_PY" | xargs grep -n \
   -E "os\.getenv\s*\([^)]+,\s*['\"][^'\"]+['\"]" 2>/dev/null \
-  | grep -vE "(localhost|5432|postgres|http://localhost|0\.0\.0\.0|\"\")")
+  | grep -vE "(localhost|5432|postgres|0\.0\.0\.0|\"\")")
 if [ -n "$result" ]; then
-  echo "[S02 FAIL] os.getenv() 실제 인프라 기본값"
-  echo "$result"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+  echo "[S02 FAIL] os.getenv() 실제 인프라 기본값"; echo "$result"; FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   echo "[S02 PASS] os.getenv() 기본값"
 fi
@@ -208,11 +207,9 @@ fi
 # S03: env.get() 실제 인프라 기본값
 result=$(echo "$TARGET_PY" | xargs grep -n \
   -E "env\.get\s*\([^)]+,\s*['\"][^'\"]+['\"]" 2>/dev/null \
-  | grep -vE "(localhost|5432|postgres|http://localhost|0\.0\.0\.0|\"\")")
+  | grep -vE "(localhost|5432|postgres|0\.0\.0\.0|\"\")")
 if [ -n "$result" ]; then
-  echo "[S03 FAIL] env.get() 실제 인프라 기본값"
-  echo "$result"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+  echo "[S03 FAIL] env.get() 실제 인프라 기본값"; echo "$result"; FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   echo "[S03 PASS] env.get() 기본값"
 fi
@@ -222,9 +219,7 @@ result=$(echo "$TARGET_PY" | xargs grep -n \
   -E "\"[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\"" 2>/dev/null \
   | grep -vE "(127\.0\.0\.1|0\.0\.0\.0)")
 if [ -n "$result" ]; then
-  echo "[S04 FAIL] 실제 IP 주소 하드코딩"
-  echo "$result"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+  echo "[S04 FAIL] 실제 IP 주소 하드코딩"; echo "$result"; FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   echo "[S04 PASS] IP 주소 하드코딩"
 fi
@@ -232,9 +227,7 @@ fi
 # S05: .env 파일 스테이징
 result=$(git diff --cached --name-only 2>/dev/null | grep -E "(^|/)\.env(\.|$)" | grep -v "\.example")
 if [ -n "$result" ]; then
-  echo "[S05 FAIL] .env 파일이 staged 상태"
-  echo "$result"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+  echo "[S05 FAIL] .env 파일이 staged 상태"; echo "$result"; FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   echo "[S05 PASS] .env 스테이징"
 fi
@@ -242,9 +235,7 @@ fi
 # S06: 민감 파일 git 추적
 result=$(git ls-files 2>/dev/null | grep -E "\.(env|pem|key|p12|pfx)$|credentials\.json|api_keys\.env$|secrets\.json" | grep -v "\.example")
 if [ -n "$result" ]; then
-  echo "[S06 FAIL] 민감 파일 git 추적 중"
-  echo "$result"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+  echo "[S06 FAIL] 민감 파일 git 추적 중"; echo "$result"; FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   echo "[S06 PASS] 민감 파일 git 추적"
 fi
@@ -256,9 +247,9 @@ grep -q "\*\.pem" .gitignore 2>/dev/null || GITIGNORE_FAIL="${GITIGNORE_FAIL} *.
 grep -q "\*\.key" .gitignore 2>/dev/null || GITIGNORE_FAIL="${GITIGNORE_FAIL} *.key"
 grep -q "credentials\.json" .gitignore 2>/dev/null || GITIGNORE_FAIL="${GITIGNORE_FAIL} credentials.json"
 grep -q "settings\.local\.json" .gitignore 2>/dev/null || GITIGNORE_FAIL="${GITIGNORE_FAIL} settings.local.json"
+grep -q "\.parquet" .gitignore 2>/dev/null || GITIGNORE_FAIL="${GITIGNORE_FAIL} *.parquet"
 if [ -n "$GITIGNORE_FAIL" ]; then
-  echo "[S07 FAIL] .gitignore 누락 항목:${GITIGNORE_FAIL}"
-  FAIL_COUNT=$((FAIL_COUNT + 1))
+  echo "[S07 FAIL] .gitignore 누락 항목:${GITIGNORE_FAIL}"; FAIL_COUNT=$((FAIL_COUNT + 1))
 else
   echo "[S07 PASS] .gitignore 필수 항목"
 fi
@@ -267,9 +258,7 @@ fi
 result=$(echo "$TARGET_PY" | xargs grep -n \
   -E "\"C:/Users/[^\"]+\"|'C:/Users/[^']+'" 2>/dev/null)
 if [ -n "$result" ]; then
-  echo "[S08 WARN] 하드코딩 로컬 경로 — 상수+CLI오버라이드 확인 필요"
-  echo "$result"
-  WARN_COUNT=$((WARN_COUNT + 1))
+  echo "[S08 WARN] 하드코딩 로컬 경로 — 상수+CLI오버라이드 확인 필요"; echo "$result"; WARN_COUNT=$((WARN_COUNT + 1))
 else
   echo "[S08 PASS] 하드코딩 로컬 경로"
 fi
@@ -312,13 +301,11 @@ FAIL 항목:
 ### S01/S02/S03 위반 수정
 ```python
 # Before (FAIL)
-DB_HOST = "10.0.0.1"
-api_key = "abcd1234efgh"
+KPX_API_KEY = "abcd1234efgh"
 host = os.getenv("DB_HOST", "10.0.0.1")
 
 # After (PASS)
-DB_HOST = os.getenv("DB_HOST")
-api_key = os.getenv("TMDB_API_KEY", "")
+KPX_API_KEY = os.getenv("KPX_API_KEY")
 host = os.getenv("DB_HOST")
 ```
 
@@ -326,17 +313,6 @@ host = os.getenv("DB_HOST")
 ```bash
 git rm --cached .env
 echo ".env" >> .gitignore
-```
-
-### S08 WARNING — 허용 조건 확인
-```python
-# WARNING 허용 (모듈 상단 상수 + CLI 인자 존재)
-DEFAULT_TRAILERS_DIR = Path("C:/Users/daewo/DX_prod_2nd/trailers")  # ← 허용
-parser.add_argument('--trailers-dir', default=str(DEFAULT_TRAILERS_DIR))
-
-# FAIL로 격상 (함수 내부 직접 사용)
-def process():
-    path = Path("C:/Users/daewo/DX_prod_2nd/trailers")  # ← FAIL
 ```
 
 ---
@@ -347,3 +323,4 @@ def process():
 2. S08 WARN 항목은 보고서 "보안 참고사항"에 기록하되 진행을 차단하지 않는다
 3. S05/S06은 `git add` 이후 `git commit` 이전에만 유효하다
 4. `.env.example`은 민감 정보 없이 키 이름만 포함된 경우 PASS
+5. 가구 전력 데이터(parquet, joblib)는 .gitignore 등록 필수 — 개인정보보호법 준수
