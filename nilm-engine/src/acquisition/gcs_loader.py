@@ -115,7 +115,7 @@ def load_channel_data_gcs(
     import pyarrow.dataset as ds
 
     path = f"{bucket_prefix}/household_id={house_id}/channel={channel}"
-    dataset = ds.dataset(path, filesystem=_pa_fs(gcs_fs), partitioning=["date"])
+    dataset = ds.dataset(path, filesystem=_pa_fs(gcs_fs), partitioning="hive")
 
     if date_range is not None:
         start, end = _yyyymmdd(date_range[0]), _yyyymmdd(date_range[1])
