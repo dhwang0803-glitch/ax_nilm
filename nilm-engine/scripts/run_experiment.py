@@ -97,7 +97,7 @@ def write_md_report(
     lines += ["", "---", "", "## 이전 EXP 대비 개선율 (Val MAE 기준)"]
 
     if all(v is None for v in prev_metrics.values()):
-        lines.append("", "> 첫 번째 실험 — 비교 대상 없음")
+        lines += ["", "> 첫 번째 실험 — 비교 대상 없음"]
     else:
         lines += [
             "",
