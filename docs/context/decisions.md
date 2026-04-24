@@ -96,3 +96,148 @@ AI Hub 71685 데이터셋(110가구 × 31일 × 23채널, 30Hz)을 기반으로 
 - [ ] ETL 스크립트(`Database/scripts/ingest_aihub.py`) — CSV/JSON → 1분 집계 → DB
 - [ ] cagg refresh + retention 운영 헬스체크 지표 정의 (후속 ADR 가능)
 - [ ] 이상 이벤트 고해상도 윈도우 테이블 필요성 재평가
+
+---
+
+## ADR-002 — DR 절감량 계산 기준 및 CBL 산정 방식
+
+- **Status**: Accepted — 2026-04-23
+- **관련 브랜치**: `kpx-integration-settlement`
+- **구현 근거**: `kpx-integration-settlement/plans/PLAN.md §UC-2`
+- **상위 요구사항**: REQ-005 (전력거래소 연계, 감축 실적 산출)
+
+### Context
+
+DR 이벤트 종료 후 가구별 절감량을 계산해야 한다. 계산 기준으로 두 가지 방식이 존재한다.
+
+1. **채널별 합산**: NILM으로 분리된 가전 채널(ch02~ch23) 절감량 합산
+2. **전체 미터 기준**: ch01(분전반 전체 미터) CBL - 실측
+
+### Decision
+
+**전체 미터(ch01) 기준 CBL 방식 채택.**
+
+- 절감량 = `cbl_kwh - actual_kwh` (ch01 이벤트 구간)
+- CBL = 이벤트 직전 10 평일 중 상위 2일·하위 2일 제외한 6일 가중평균 (KPX 표준)
+- NILM 채널(ch02~ch23)별 절감량은 KPX 정산 기준이 아닌 **UI 가전별 기여 표시 전용**
+
+### Consequences
+
+**Positive**
+- ch01은 실측값으로 NILM 분해 오차 없음 → KPX 검증 통과 신뢰도 높음
+- 채널 합산 시 발생하는 분해 오차 누적 방지
+
+**Negative**
+- 가전별 정확한 기여도는 NILM 정확도에 의존 → UI 참고용으로만 제공
+
+### Alternatives Considered
+
+| 대안 | 기각 사유 |
+|------|-----------|
+| 에어컨 채널[고정시간대] 직접 합산 | 이벤트 구간이 고정이 아니며, 에어컨 외 가전 기여 누락 |
+| 모든 NILM 채널 합산 | 분해 오차 누적, KPX 미터값과 불일치 가능 |
+
+---
+
+## ADR-003 — DR 이벤트 구간 처리 방식
+
+- **Status**: Accepted — 2026-04-23
+- **관련 브랜치**: `kpx-integration-settlement`
+- **상위 요구사항**: REQ-005 (DR 이벤트 수신)
+
+### Context
+
+DR 이벤트 발령 시각과 종료 시각을 어떻게 처리할지 결정해야 한다.
+초기 설계에서 17~20시 고정 구간으로 가정했으나 KPX 운영 규칙 확인 결과 이와 다름이 확인됨.
+
+### Decision
+
+**DR 이벤트 구간은 KPX 수신값(start_ts, end_ts)을 그대로 사용한다.**
+
+- 발령 가능 시간: 평일 06:00~21:00 (KPX 국민DR 기준)
+- 사전 통보: 이벤트 시작 최소 30분 전
+- 코드 내 시간대 하드코딩 금지 — 모든 계산은 수신된 start_ts, end_ts 기준
+
+### Consequences
+
+**Positive**: 실제 KPX 운영 방식과 정합. 이벤트 구간 변경 시 코드 수정 불필요
+
+**Negative**: 시뮬레이션 시 임의 이벤트 구간 주입 필요 (현재 18:00~19:00 사용)
+
+---
+
+## ADR-004 — LLM 입력 데이터 익명화 정책
+
+- **Status**: Accepted — 2026-04-23
+- **관련 브랜치**: `kpx-integration-settlement`
+- **상위 요구사항**: REQ-007 (보안), 개인정보보호법
+
+### Context
+
+가구 전력 소비 패턴은 개인식별 가능 정보(PII)이다. LLM 맥락 메시지 생성을 위해 OpenAI API(GPT-4o-mini)를 사용하며, 데이터가 외부 서버로 전송된다.
+
+### Decision
+
+**LLM API 호출 시 household_id·주소·가구원 정보를 제외한 익명화 데이터만 전송한다.**
+
+전송 허용 필드:
+- `temperature`, `humidity`, `windchill` (공개 기상 데이터)
+- `cluster_label` (0/1/2, 군집 번호)
+- `savings_kwh`, `refund_krw` (집계값)
+- `appliance_code` 목록 (가전 종류, 식별 불가)
+- `event_start`, `event_end` (이벤트 구간)
+
+전송 금지 필드:
+- `household_id`, `address`, `members`, `income`
+
+### Consequences
+
+**Positive**: 외부 API 전송 시 PII 유출 방지, 개인정보보호법 준수
+
+**Negative**: 가구 맥락 일부 손실 → 개인화 정확도 일부 저하 허용
+
+### Alternatives Considered
+
+| 대안 | 기각 사유 |
+|------|-----------|
+| 로컬 Gemma 26B | 품질 검증 필요, 초기 단계에서 운영 부담 높음 — 추후 검토 |
+| 전체 데이터 전송 | 개인정보보호법 위반 위험 |
+
+---
+
+## ADR-005 — 30분 단위 DR 사전 계산 테이블 도입
+
+- **Status**: Accepted — 2026-04-23
+- **관련 브랜치**: `kpx-integration-settlement` (읽기), `Database` (생성 담당)
+- **구현 근거**: `kpx-integration-settlement/plans/PLAN.md §power_efficiency_30min`
+- **상위 요구사항**: REQ-008 (성능 <2s)
+
+### Context
+
+DR 절감량 계산 시 TimescaleDB `power_1min`을 매 요청마다 직접 조회하면 DB 병목이 발생한다.
+프론트엔드 효율화 방안 표시·정산 계산 등 여러 유스케이스가 동일 데이터를 반복 조회하는 구조.
+
+### Decision
+
+**30분 단위 DR 사전 계산 테이블(`power_efficiency_30min`)을 별도 생성하고, 모든 절감량 조회는 이 테이블에서만 읽는다.**
+
+- `power_1min` 직접 조회 금지 (kpx-integration-settlement 내에서)
+- 채우는 주체: Celery beat (1시간 주기 전 가구 집계) + DR 이벤트 수신 시 즉시 계산
+- LLM 호출 시점: 프론트엔드 효율화 방안 요청 시에만
+
+### Consequences
+
+**Positive**
+- 반복 TimescaleDB 조회 제거 → 응답 지연 감소
+- LLM 호출 빈도 제어 가능 (요청 시에만)
+
+**Negative**
+- Celery 배치 지연 시 최신 데이터 반영 늦어질 수 있음 (최대 1시간 지연)
+- 테이블 관리 추가 (Database 브랜치 협업 필요)
+
+### Alternatives Considered
+
+| 대안 | 기각 사유 |
+|------|-----------|
+| 실시간 TimescaleDB 조회 | 분당 1분 행 풀스캔 → 병목 확인됨 |
+| Redis 캐싱 | 사전 계산 결과를 DB에 영속화하는 것이 감사·정산 추적에 유리 |
