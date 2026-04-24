@@ -163,9 +163,9 @@ def get_appliance_name_gcs(
     """channel의 가전 이름 반환. 없으면 None."""
     df = _load_labels_df(gcs_fs, label_path)
     rows = df[(df["household_id"] == house_id) & (df["channel"] == channel)]
-    if rows.empty or "name" not in rows.columns:
+    if rows.empty or "appliance_name" not in rows.columns:
         return None
-    return rows.iloc[0]["name"]
+    return rows.iloc[0]["appliance_name"]
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
