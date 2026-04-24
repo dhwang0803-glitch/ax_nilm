@@ -118,7 +118,7 @@ def load_channel_data_gcs(
     dataset = ds.dataset(path, filesystem=_pa_fs(gcs_fs), partitioning="hive")
 
     if date_range is not None:
-        start, end = _yyyymmdd(date_range[0]), _yyyymmdd(date_range[1])
+        start, end = int(_yyyymmdd(date_range[0])), int(_yyyymmdd(date_range[1]))
         filt = (ds.field("date") >= start) & (ds.field("date") <= end)
         table = dataset.to_table(filter=filt)
     else:
