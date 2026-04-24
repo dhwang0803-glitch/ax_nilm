@@ -268,12 +268,34 @@ def main():
     train_houses = dataset_cfg["split"]["train"]
     val_houses   = dataset_cfg["split"]["val"]
 
-    base_train = NILMDataset(train_houses, data_root, window_size, stride,
-                             date_range=train_date_range, week=train_week,
-                             fit_scaler=True)
-    base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
-                             date_range=eval_date_range,
-                             scaler=base_train.scaler)
+    from acquisition.preprocessor import PowerScaler
+
+    ckpt_dir = _NILM_ROOT / "checkpoints"
+    ckpt_dir.mkdir(exist_ok=True)
+    resume_exp = exp_cfg.get("resume_from")
+
+    # EXP2+ 재개 시 이전 scaler 재사용 — 정규화 기준 일관성 유지
+    prev_scaler: PowerScaler | None = None
+    if resume_exp:
+        scaler_path = ckpt_dir / f"{resume_exp}_{args.model}_scaler.json"
+        if scaler_path.exists():
+            prev_scaler = PowerScaler.load(scaler_path)
+            print(f"  └─ scaler 로드: mean={prev_scaler.mean:.2f}W  std={prev_scaler.std:.2f}W")
+
+    if prev_scaler is not None:
+        base_train = NILMDataset(train_houses, data_root, window_size, stride,
+                                 date_range=train_date_range, week=train_week,
+                                 scaler=prev_scaler)
+        base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
+                                 date_range=eval_date_range,
+                                 scaler=prev_scaler)
+    else:
+        base_train = NILMDataset(train_houses, data_root, window_size, stride,
+                                 date_range=train_date_range, week=train_week,
+                                 fit_scaler=True)
+        base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
+                                 date_range=eval_date_range,
+                                 scaler=base_train.scaler)
 
     if args.model == "cnn_tda":
         train_ds = _NILMDatasetWithTDA(base_train)
@@ -291,15 +313,11 @@ def main():
     model  = build_model(args.model, window_size).to(device)
 
     # 이전 EXP 체크포인트 로드 (추가학습)
-    ckpt_dir = _NILM_ROOT / "checkpoints"
-    ckpt_dir.mkdir(exist_ok=True)
-
-    resume_exp = exp_cfg.get("resume_from")
     if resume_exp:
         prev_ckpt = ckpt_dir / f"{resume_exp}_{args.model}.pt"
         if prev_ckpt.exists():
             model.load_state_dict(torch.load(prev_ckpt, map_location=device))
-            print(f"  └─ 체크포인트 로드: {prev_ckpt.name}")
+            print(f"  └─ 모델 로드: {prev_ckpt.name}")
         else:
             print(f"  └─ 경고: {prev_ckpt.name} 없음 — 처음부터 학습")
 
@@ -322,8 +340,8 @@ def main():
                 "window_size": window_size, "batch_size": batch_size,
                 "resume_from": resume_exp or "scratch",
             })
-        except ImportError:
-            print("  MLflow 없음 — 로깅 스킵")
+        except Exception as e:
+            print(f"  MLflow 스킵: {e}")
 
     # ── 학습 루프 ────────────────────────────────────────────────────────────
     best_val_mae = float("inf")
@@ -380,6 +398,10 @@ def main():
     ckpt_path = ckpt_dir / f"{args.exp}_{args.model}.pt"
     torch.save(model.state_dict(), ckpt_path)
     print(f"  체크포인트 저장: {ckpt_path.relative_to(_NILM_ROOT)}")
+
+    if base_train.scaler is not None:
+        scaler_path = ckpt_dir / f"{args.exp}_{args.model}_scaler.json"
+        base_train.scaler.save(scaler_path)
 
     final_metrics = evaluate(model, val_loader, args.model, device)
     final_metrics["exp"]             = args.exp
