@@ -108,18 +108,30 @@ def find_appliance_channel(
     return None
 
 
+def _to_naive(val) -> pd.Timestamp:
+    ts = pd.Timestamp(val)
+    return ts.tz_convert(None) if ts.tzinfo is not None else ts
+
+
 def build_active_mask(labels: list[dict], timestamps: pd.Series) -> np.ndarray:
     """라벨 rows의 start_ts/end_ts 구간을 합산해 boolean 마스크 반환.
 
     shape: (len(timestamps),)
     """
+    # timestamps가 tz-aware이면 naive로 통일
+    if hasattr(timestamps, "dt") and timestamps.dt.tz is not None:
+        timestamps = timestamps.dt.tz_convert(None)
+
     mask = np.zeros(len(timestamps), dtype=bool)
     for label in labels:
-        start_ts = label.get("start_ts")
-        end_ts = label.get("end_ts")
-        if not start_ts or not end_ts:
+        start_val = label.get("start_ts")
+        end_val   = label.get("end_ts")
+        if start_val is None or end_val is None:
             continue
-        start = pd.Timestamp(start_ts)
-        end = pd.Timestamp(end_ts)
+        try:
+            start = _to_naive(start_val)
+            end   = _to_naive(end_val)
+        except Exception:
+            continue
         mask |= (timestamps >= start) & (timestamps <= end)
     return mask
