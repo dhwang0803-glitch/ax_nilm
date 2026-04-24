@@ -30,7 +30,7 @@
 - **백엔드**: FastAPI, JWT, OAuth2
 - **프론트엔드**: React, TypeScript, Recharts, Tailwind CSS, React Native
 - **MLOps**: MLflow, DVC, Docker, Kubernetes, GitHub Actions
-- **LLM**: OpenAI API, LangChain
+- **LLM**: OpenAI API (GPT-4o-mini, 가구 식별정보 제외 익명화 후 사용), LangChain
 
 ## 보안 규칙 (MANDATORY)
 
