@@ -1,0 +1,41 @@
+training:
+  epochs: 15
+  batch_size: 32
+  learning_rate: 0.001
+  early_stopping_patience: 5
+  loss_weights:
+    mse: 1.0   # 전력 회귀 오차 가중치
+    bce: 0.5   # ON/OFF 분류 오차 가중치 (미사용 — 추후 확장용)
+
+optimizer:
+  name: "adam"
+  weight_decay: 0.0001
+
+scheduler:
+  name: "reduce_on_plateau"
+  factor: 0.5
+  patience: 5
+
+# 주차별 추가학습 실험 설정
+# EXP1: 처음부터 학습 (resume_from: null)
+# EXP2+: 이전 EXP 체크포인트에서 이어서 학습
+experiments:
+  EXP1:
+    week: 1          # house별 시작일 기준 1~7일차
+    resume_from: null
+  EXP2:
+    week: 2          # 8~14일차
+    resume_from: "EXP1"
+  EXP3:
+    week: 3          # 15~21일차
+    resume_from: "EXP2"
+  EXP4:
+    week: 4          # 22~28일차
+    resume_from: "EXP3"
+
+# Val/Test 평가는 학습 기간과 무관하게 전체 데이터 사용 (different houses → no leakage)
+eval:
+  date_range: null   # null = 전체 기간
+
+# 포화점 판단 기준: 이전 EXP 대비 Val MAE 개선율 < 이 값이면 포화로 판단
+saturation_threshold: 0.05   # 5%

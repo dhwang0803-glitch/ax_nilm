@@ -215,6 +215,10 @@ Database/dataset_staging/
 # Local design artifacts
 co_docs/
 
+# Datasets (large binary files — manage via DVC or manual upload)
+datasets/
+nilm-engine/datasets/
+
 # Secrets & credentials
 *.pem
 *.key
