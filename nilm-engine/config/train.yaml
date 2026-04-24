@@ -1,8 +1,8 @@
 training:
-  epochs: 3
+  epochs: 15
   batch_size: 32
   learning_rate: 0.001
-  early_stopping_patience: 10
+  early_stopping_patience: 5
   loss_weights:
     mse: 1.0   # 전력 회귀 오차 가중치
     bce: 0.5   # ON/OFF 분류 오차 가중치 (미사용 — 추후 확장용)
