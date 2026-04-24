@@ -253,7 +253,7 @@ class GCSNILMDataset(Dataset):
                 except Exception as e:
                     print(f"[GCSNILMDataset] {house_id}/{ch} 로드 실패: {e}")
 
-            agg_power = agg_df["active_power"].to_numpy(dtype=np.float32)
+            agg_power = agg_df["active_power"].fillna(0).to_numpy(dtype=np.float32)
             if fit_scaler:
                 _all_agg.append(agg_power)
             seg_idx = len(self._segments)
