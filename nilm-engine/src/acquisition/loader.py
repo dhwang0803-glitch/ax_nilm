@@ -109,19 +109,17 @@ def find_appliance_channel(
 
 
 def build_active_mask(labels: list[dict], timestamps: pd.Series) -> np.ndarray:
-    """라벨 rows의 active_inactive 구간을 합산해 boolean 마스크 반환.
+    """라벨 rows의 start_ts/end_ts 구간을 합산해 boolean 마스크 반환.
 
-    active_inactive는 문자열로 저장된 [[start, end], ...] 형태.
     shape: (len(timestamps),)
     """
     mask = np.zeros(len(timestamps), dtype=bool)
     for label in labels:
-        raw = label.get("active_inactive")
-        if not raw:
+        start_ts = label.get("start_ts")
+        end_ts = label.get("end_ts")
+        if not start_ts or not end_ts:
             continue
-        intervals = ast.literal_eval(raw) if isinstance(raw, str) else raw
-        for start_str, end_str in intervals:
-            start = pd.Timestamp(start_str)
-            end = pd.Timestamp(end_str)
-            mask |= (timestamps >= start) & (timestamps <= end)
+        start = pd.Timestamp(start_ts)
+        end = pd.Timestamp(end_ts)
+        mask |= (timestamps >= start) & (timestamps <= end)
     return mask
