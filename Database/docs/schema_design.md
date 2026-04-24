@@ -1,8 +1,9 @@
 # 데이터베이스 스키마 설계 근거
 
-> 대상 DDL: `Database/schemas/001_core_tables.sql`, `002_timeseries_tables.sql`, `003_seed_appliance_types.sql`
-> 상위 요구사항: 루트 `CLAUDE.md` REQ-001 (NILM 엔진, 30Hz), REQ-004 (데이터 관리), REQ-007 (보안)
+> 대상 DDL: `Database/schemas/001_core_tables.sql`, `002_timeseries_tables.sql`, `003_seed_appliance_types.sql`, `004_nilm_inference_tables.sql`
+> 상위 요구사항: 루트 `CLAUDE.md` REQ-001 (NILM 엔진, 30Hz), REQ-002 (이상 탐지), REQ-004 (데이터 관리), REQ-007 (보안)
 > 데이터 명세: `Database/docs/dataset_spec.md`
+> 모델 인터페이스: `Database/docs/model_interface.md`
 
 ## 0. 핵심 정책 결정
 
@@ -10,9 +11,14 @@
 
 - NILM 엔진이 로컬 파일(또는 스트림)에서 30Hz 데이터를 직접 읽어
   분해(Disaggregation)·이상탐지 수행 후 결과만 반환, 원시는 폐기.
-- NILM 엔진이 생산하는 분해 결과는 **DB에 저장하지 않는다** — 모델링 성능 평가용으로
-  AI Hub 라벨(`activity_intervals`)과의 비교에만 사용.
 - 이상 이벤트 고해상도 윈도우 테이블은 **후속 작업으로 연기**.
+
+**NILM 모델 출력은 구간 기반으로 DB에 적재한다.** _(정책 개정 — 초기 설계에서 뒤집음)_
+
+- CNN+TDA 하이브리드 모델의 가전 상태 분류 결과를 `appliance_status_intervals` 에 구간 단위로 저장.
+- 이유: 실서비스 단계에서는 AI Hub 같은 ground truth 라벨이 존재하지 않으므로 시간대별 이상 탐지 (REQ-002) 및 실시간 알림(프론트 태그 + SMTP)의 입력원이 모델 출력 자체. 어딘가에 영속화해야 함.
+- AI Hub 라벨(`activity_intervals`)은 학습/평가 ground truth, 모델 출력(`appliance_status_intervals`)은 실서비스/이상탐지 입력 — **두 테이블은 병행**하며 IoU/F1 평가에서 JOIN.
+- 상세 스펙: `Database/docs/model_interface.md`.
 
 **DB 저장은 2단 해상도 구조(hot/cold)로 운영한다.**
 
@@ -69,7 +75,9 @@ household_channels             — 가구별 ch01~ch23 구성 (가전 메타 포
 household_daily_env            — 가구별 일별 날씨/기온/풍속/습도
 power_1min                     — 1분 집계 시계열 (hypertable, hot 7일, ch01~ch23 공용)
 power_1hour                    — 1시간 다운샘플 (continuous aggregate, cold 장기, 시간대 패턴 보존)
-activity_intervals             — 가전 ON 구간 라벨 (AI Hub 제공, 초 단위 정밀도 유지)
+activity_intervals             — 가전 ON 구간 라벨 (AI Hub ground truth, 초 단위 정밀도)
+appliance_status_intervals     — CNN+TDA 모델 상태 출력 (구간 기반, 실서비스/이상탐지 입력)
+appliance_status_codes         — status_code 의미 정의 마스터
 ingestion_log                  — 파일 적재 이력
 ```
 
@@ -220,20 +228,25 @@ FROM power_1hour
 WHERE hour_bucket < NOW() - INTERVAL '7 days';  -- 중복 방지
 ```
 
-## 4. 라벨 (`activity_intervals`)
+## 4. 라벨 및 모델 출력 — 이중 구조
 
-### 4.1 의미 정의
+역할이 다른 두 구간 테이블을 병행 운영한다.
+
+| 테이블 | 출처 | 정밀도 | 상태 표현 | 용도 |
+|--------|------|--------|----------|------|
+| `activity_intervals` | AI Hub 71685 제공 라벨 | 초 단위 | ON 구간만 (OFF 는 여집합) | 학습/평가 ground truth |
+| `appliance_status_intervals` | CNN+TDA 모델 출력 | 모델 추론 주기 | status_code (off/active/wash/spin ...) | 실서비스, 이상탐지 입력, 실시간 알림 |
+
+### 4.1 `activity_intervals` — ground truth (AI Hub 라벨)
 
 `active_inactive` 배열은 "기기 ON 구간"만 나열 — 비활성 구간은 암묵적 여집합. 테이블은 **활성(ON) 구간**만 저장하고 OFF 는 도출.
 
-### 4.2 1분 집계와 독립된 초 단위 정밀도
-
-라벨은 1분 버킷과 별개로 **초 단위 원래 정밀도**를 유지. 이유:
+**1분 집계와 독립된 초 단위 정밀도**: 라벨은 1분 버킷과 별개로 **초 단위 원래 정밀도**를 유지.
 
 - NILM 모델 학습·평가 시 1분 해상도로 다운샘플하면 짧은 ON 이벤트(예: 전자레인지 30초) 손실
 - 1분 집계와의 정합성은 쿼리 시점에 범위 연산(`tstzrange && tstzrange`)으로 해결 가능
 
-### 4.3 구간 겹침 방지
+**구간 겹침 방지**:
 
 ```sql
 EXCLUDE USING gist (
@@ -245,12 +258,47 @@ EXCLUDE USING gist (
 
 동일 (가구, 채널) 내에서 시간 구간이 겹치는 행을 DB 레벨에서 차단 — 라벨링 품질 보증.
 
-### 4.4 NILM 엔진 출력은 미적재
+`source` 컬럼 유일 값: `'aihub_71685'`. 과거엔 다른 라벨 출처 병존을 고려했으나, 모델 출력은 아래 `appliance_status_intervals` 로 분리했으므로 이 테이블은 외부 라벨 전용.
 
-우리 모델의 분해 결과는 DB에 저장하지 않는다(§0 정책). `source` 컬럼은 향후 확장 여지로만 유지:
+### 4.2 `appliance_status_intervals` — CNN+TDA 모델 출력
 
-- 현재 유일한 값: `'aihub_71685'`
-- 미래 확장 가능: `'human_annotator_v2'`, `'model_unet_nilm_v1'` — 필요 시점에 정책 재검토
+구간 기반(`start_ts`, `end_ts`) 으로 `status_code` + `confidence` + `model_version` 저장. 핵심 설계 포인트:
+
+- **INSERT = 상태 전환 이벤트 발행**: 상태가 유지되는 동안은 새 행 발행 금지, 전환 시에만 이전 구간 UPDATE(`end_ts`) + 신규 INSERT 를 단일 트랜잭션으로 수행.
+- **`end_ts IS NULL` = 현재 진행 중**: partial index 로 "지금 상태" O(log N) 조회.
+- **`model_version` 축**: 동일 구간에 여러 버전 병존 허용 → A/B 평가, ground truth(`activity_intervals`) 와 비교 시 IoU/F1 계산.
+- **`confidence < 0.6` 은 이상탐지 집계에서 제외** (REQ-001). 임계값은 초기 모델 분포 확인 후 재조정.
+- **`appliance_status_codes` 마스터**: status 의미를 마스터로 분리해 가전별 상세 상태(세탁기 wash/rinse/spin, 냉장고 compressor_on/defrost 등) 확장 가능.
+
+**구간 겹침 차단** (`model_version` 축 포함):
+
+```sql
+EXCLUDE USING gist (
+    household_id  WITH =,
+    channel_num   WITH =,
+    model_version WITH =,
+    tstzrange(start_ts, COALESCE(end_ts, 'infinity'), '[)') WITH &&
+)
+```
+
+모델 팀이 확정해야 할 항목(상태 코드 세트, confidence 정의, 추론 주기 등)과 적재 트랜잭션 템플릿은 `Database/docs/model_interface.md` 참조.
+
+### 4.3 두 테이블 평가 JOIN 패턴
+
+```sql
+SELECT gt.household_id, gt.channel_num,
+       gt.start_ts, gt.end_ts,
+       m.status_code, m.confidence
+FROM activity_intervals gt
+LEFT JOIN appliance_status_intervals m
+  ON gt.household_id = m.household_id
+ AND gt.channel_num  = m.channel_num
+ AND m.model_version = 'cnn_tda_v1'
+ AND tstzrange(gt.start_ts, gt.end_ts, '[]')
+     && tstzrange(m.start_ts, COALESCE(m.end_ts, 'infinity'), '[)');
+```
+
+이상탐지 로직은 `appliance_status_intervals` 에서 INSERT 트리거로 발화 → 이상 판정 시 `anomaly_events` (후속 PR) 로 승격.
 
 ## 5. ETL 시 필수 정제 규칙
 
@@ -275,9 +323,11 @@ EXCLUDE USING gist (
 |------|---------------|
 | 1일 집계 추가 계층 (월간 리포트 가속) | `power_1day` cagg — `power_1hour` 에서 파생 |
 | 이상 이벤트 고해상도 윈도우 | 별도 hypertable (현재 연기) |
-| NILM 모델 출력 저장 | 현재 정책상 없음 — 필요 시 `activity_intervals` 재사용 또는 신규 테이블 |
-| 이상탐지 결과 (REQ-002) | `anomaly_events` 신규 테이블 |
-| DR 감축 실적 (REQ-005) | `dr_event`, `dr_performance` |
+| 이상탐지 결과 (REQ-002) | `anomaly_events` 신규 테이블 (후속 PR) |
+| DR 감축 실적 (REQ-005) | `dr_events`, `dr_results` 신규 테이블 (후속 PR) |
+| `appliance_status_codes` seed 적재 | 모델 팀 상태 세트 확정 후 마이그레이션 |
+| `appliance_status_intervals` 컬럼 추가 | TDA feature 메타 / transition_reason 등 — 모델 초기 결과 확인 후 `ALTER TABLE` |
+| 실시간 알림 백엔드 | 초기 `pg_notify`/`LISTEN`, 부하 가시화 시 Kafka/Redis Streams |
 | B2B 지역 집계 (REQ-009) | 지역 차원 추가 or 별도 집계 hypertable |
 | 사용자 계정/인증 (REQ-007) | `users`, `oauth_tokens` 별도 도메인 |
 
