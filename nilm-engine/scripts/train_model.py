@@ -79,13 +79,18 @@ def build_model(model_name: str, window_size: int) -> nn.Module:
 
 # ── 손실 함수 ─────────────────────────────────────────────────────────────────
 
-def masked_mse(pred: torch.Tensor, target: torch.Tensor, validity: torch.Tensor) -> torch.Tensor:
-    """validity=False 채널은 loss 제외."""
-    # pred, target: (batch, N_APPLIANCES)
-    # validity: (batch, N_APPLIANCES)
-    mask = validity.float()
-    diff = (pred - target) ** 2 * mask
-    denom = mask.sum().clamp(min=1.0)
+def masked_weighted_mse(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    on_off: torch.Tensor,
+    validity: torch.Tensor,
+    on_weight: float = 5.0,
+) -> torch.Tensor:
+    """validity=False 채널 제외. ON 구간은 on_weight 배 가중해 trivial zero 예측 방지."""
+    # pred, target, on_off: (batch, N_APPLIANCES)
+    weight = validity.float() * (1.0 + (on_weight - 1.0) * on_off.float())
+    diff = (pred - target) ** 2 * weight
+    denom = weight.sum().clamp(min=1.0)
     return diff.sum() / denom
 
 
@@ -211,9 +216,10 @@ def train_one_epoch(
 
         center = target.shape[-1] // 2
         target_c = target[:, :, center].to(device)
+        on_off_c = on_off[:, :, center].to(device)
         validity = validity.to(device)
 
-        loss = masked_mse(pred, target_c, validity)
+        loss = masked_weighted_mse(pred, target_c, on_off_c, validity)
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
@@ -262,10 +268,34 @@ def main():
     train_houses = dataset_cfg["split"]["train"]
     val_houses   = dataset_cfg["split"]["val"]
 
-    base_train = NILMDataset(train_houses, data_root, window_size, stride,
-                             date_range=train_date_range, week=train_week)
-    base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
-                             date_range=eval_date_range)
+    from acquisition.preprocessor import PowerScaler
+
+    ckpt_dir = _NILM_ROOT / "checkpoints"
+    ckpt_dir.mkdir(exist_ok=True)
+    resume_exp = exp_cfg.get("resume_from")
+
+    # EXP2+ 재개 시 이전 scaler 재사용 — 정규화 기준 일관성 유지
+    prev_scaler: PowerScaler | None = None
+    if resume_exp:
+        scaler_path = ckpt_dir / f"{resume_exp}_{args.model}_scaler.json"
+        if scaler_path.exists():
+            prev_scaler = PowerScaler.load(scaler_path)
+            print(f"  └─ scaler 로드: mean={prev_scaler.mean:.2f}W  std={prev_scaler.std:.2f}W")
+
+    if prev_scaler is not None:
+        base_train = NILMDataset(train_houses, data_root, window_size, stride,
+                                 date_range=train_date_range, week=train_week,
+                                 scaler=prev_scaler)
+        base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
+                                 date_range=eval_date_range,
+                                 scaler=prev_scaler)
+    else:
+        base_train = NILMDataset(train_houses, data_root, window_size, stride,
+                                 date_range=train_date_range, week=train_week,
+                                 fit_scaler=True)
+        base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
+                                 date_range=eval_date_range,
+                                 scaler=base_train.scaler)
 
     if args.model == "cnn_tda":
         train_ds = _NILMDatasetWithTDA(base_train)
@@ -283,15 +313,11 @@ def main():
     model  = build_model(args.model, window_size).to(device)
 
     # 이전 EXP 체크포인트 로드 (추가학습)
-    ckpt_dir = _NILM_ROOT / "checkpoints"
-    ckpt_dir.mkdir(exist_ok=True)
-
-    resume_exp = exp_cfg.get("resume_from")
     if resume_exp:
         prev_ckpt = ckpt_dir / f"{resume_exp}_{args.model}.pt"
         if prev_ckpt.exists():
             model.load_state_dict(torch.load(prev_ckpt, map_location=device))
-            print(f"  └─ 체크포인트 로드: {prev_ckpt.name}")
+            print(f"  └─ 모델 로드: {prev_ckpt.name}")
         else:
             print(f"  └─ 경고: {prev_ckpt.name} 없음 — 처음부터 학습")
 
@@ -314,8 +340,8 @@ def main():
                 "window_size": window_size, "batch_size": batch_size,
                 "resume_from": resume_exp or "scratch",
             })
-        except ImportError:
-            print("  MLflow 없음 — 로깅 스킵")
+        except Exception as e:
+            print(f"  MLflow 스킵: {e}")
 
     # ── 학습 루프 ────────────────────────────────────────────────────────────
     best_val_mae = float("inf")
@@ -373,10 +399,14 @@ def main():
     torch.save(model.state_dict(), ckpt_path)
     print(f"  체크포인트 저장: {ckpt_path.relative_to(_NILM_ROOT)}")
 
+    if base_train.scaler is not None:
+        scaler_path = ckpt_dir / f"{args.exp}_{args.model}_scaler.json"
+        base_train.scaler.save(scaler_path)
+
     final_metrics = evaluate(model, val_loader, args.model, device)
     final_metrics["exp"]             = args.exp
     final_metrics["model"]           = args.model
-    final_metrics["date_range"]      = list(train_date_range)
+    final_metrics["date_range"]      = list(train_date_range) if train_date_range else f"week={train_week}"
     final_metrics["training_time_s"] = round(training_time_s, 1)
     final_metrics["avg_epoch_s"]     = round(avg_epoch_s, 1)
     final_metrics["n_epochs"]        = len(epoch_times)

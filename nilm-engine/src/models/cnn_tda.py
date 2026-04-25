@@ -123,12 +123,8 @@ class CNNTDAHybrid(nn.Module):
         cnn_pred    = self.cnn_head(cnn_feat)          # (batch, N_APPLIANCES)
         fusion_pred = self.fusion_head(fused)          # (batch, N_APPLIANCES)
 
-        if self.training:
-            # Soft mixture — 두 헤드 모두 gradient 받아 학습
-            pred = confidence * cnn_pred + (1 - confidence) * fusion_pred
-        else:
-            # 추론 slow path (gate가 낮아서 TDA까지 온 경우)
-            pred = fusion_pred
+        # train/eval 모두 soft mixture — 평가 지표가 학습 목표와 일치
+        pred = confidence * cnn_pred + (1 - confidence) * fusion_pred
 
         return pred, confidence
 

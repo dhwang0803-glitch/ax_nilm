@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset
 
 if TYPE_CHECKING:
-    import pyarrow.fs as pa_fs
+    import gcsfs as gcsfs_type
 
 # ── GCS 경로 상수 ─────────────────────────────────────────────────────────────
 GCS_BUCKET = "ax-nilm-data-dhwang0803-us"
@@ -29,7 +29,6 @@ APPLIANCE_INDEX: dict[str, int] = {
 }
 N_APPLIANCES = 22
 
-# labels/training.parquet 세션 캐시 — 5.9MB 단일 파일이므로 1회만 로드
 _labels_cache: dict[str, pd.DataFrame] = {}
 
 
@@ -37,15 +36,21 @@ def _yyyymmdd(d: str) -> str:
     return str(d).replace("-", "")
 
 
+def _pa_fs(gcs_fs: "gcsfs_type.GCSFileSystem"):
+    """gcsfs → pyarrow FSSpec 래퍼 (parquet/dataset 읽기용)."""
+    from pyarrow.fs import PyFileSystem, FSSpecHandler
+    return PyFileSystem(FSSpecHandler(gcs_fs))
+
+
 # ── labels 캐시 ───────────────────────────────────────────────────────────────
 
 def _load_labels_df(
-    gcs_fs: "pa_fs.GcsFileSystem",
+    gcs_fs: "gcsfs_type.GCSFileSystem",
     label_path: str = _DEFAULT_LABEL_PATH,
 ) -> pd.DataFrame:
     if label_path not in _labels_cache:
         import pyarrow.parquet as pq
-        table = pq.read_table(label_path, filesystem=gcs_fs)
+        table = pq.read_table(label_path, filesystem=_pa_fs(gcs_fs))
         _labels_cache[label_path] = table.to_pandas()
     return _labels_cache[label_path]
 
@@ -53,48 +58,44 @@ def _load_labels_df(
 # ── 탐색 함수 ─────────────────────────────────────────────────────────────────
 
 def list_channels_gcs(
-    gcs_fs: "pa_fs.GcsFileSystem",
+    gcs_fs: "gcsfs_type.GCSFileSystem",
     house_id: str,
     bucket_prefix: str = _DEFAULT_RAW_PREFIX,
 ) -> list[str]:
     """GCS 파티션에서 house의 channel 목록 반환."""
-    import pyarrow.fs as pa_fs
-
-    path = f"{bucket_prefix}/household_id={house_id}"
+    path = f"{bucket_prefix}/household_id={house_id}/"
     try:
-        sel = pa_fs.FileSelector(path, recursive=False)
-        infos = gcs_fs.get_file_info(sel)
+        items = gcs_fs.ls(path)
         channels = []
-        for info in infos:
-            if info.type == pa_fs.FileType.Directory:
-                name = info.path.rstrip("/").split("/")[-1]
-                if name.startswith("channel="):
-                    channels.append(name[len("channel="):])
+        for item in items:
+            name = item.rstrip("/").split("/")[-1]
+            if name.startswith("channel="):
+                channels.append(name[len("channel="):])
         return sorted(channels)
-    except Exception:
+    except Exception as e:
+        print(f"[list_channels_gcs] {path} 접근 실패: {e}")
         return []
 
 
 def get_house_start_date_gcs(
-    gcs_fs: "pa_fs.GcsFileSystem",
+    gcs_fs: "gcsfs_type.GCSFileSystem",
     house_id: str,
     channel: str = "ch01",
     bucket_prefix: str = _DEFAULT_RAW_PREFIX,
 ) -> date:
     """GCS 날짜 파티션에서 house의 데이터 시작일 반환."""
-    import pyarrow.fs as pa_fs
-
-    path = f"{bucket_prefix}/household_id={house_id}/channel={channel}"
-    sel = pa_fs.FileSelector(path, recursive=False)
-    infos = gcs_fs.get_file_info(sel)
+    path = f"{bucket_prefix}/household_id={house_id}/channel={channel}/"
+    try:
+        items = gcs_fs.ls(path)
+    except Exception as e:
+        raise FileNotFoundError(f"date 파티션 없음: {path}") from e
 
     dates = []
-    for info in infos:
-        if info.type == pa_fs.FileType.Directory:
-            name = info.path.rstrip("/").split("/")[-1]
-            if name.startswith("date="):
-                d = name[len("date="):]
-                dates.append(date(int(d[:4]), int(d[4:6]), int(d[6:8])))
+    for item in items:
+        name = item.rstrip("/").split("/")[-1]
+        if name.startswith("date="):
+            d = name[len("date="):]
+            dates.append(date(int(d[:4]), int(d[4:6]), int(d[6:8])))
 
     if not dates:
         raise FileNotFoundError(f"date 파티션 없음: {path}")
@@ -104,31 +105,25 @@ def get_house_start_date_gcs(
 # ── 원천데이터 로드 ────────────────────────────────────────────────────────────
 
 def load_channel_data_gcs(
-    gcs_fs: "pa_fs.GcsFileSystem",
+    gcs_fs: "gcsfs_type.GCSFileSystem",
     house_id: str,
     channel: str,
     date_range: tuple[str, str] | None = None,
     bucket_prefix: str = _DEFAULT_RAW_PREFIX,
 ) -> pd.DataFrame:
-    """GCS 파티션에서 채널 데이터 로드.
-
-    columns: date_time(datetime64), active_power, voltage, current,
-             frequency, apparent_power, reactive_power,
-             power_factor, phase_difference, current_phase, voltage_phase
-    """
+    """GCS 파티션에서 채널 데이터 로드."""
     import pyarrow.dataset as ds
 
     path = f"{bucket_prefix}/household_id={house_id}/channel={channel}"
-    dataset = ds.dataset(path, filesystem=gcs_fs, partitioning=["date"])
+    dataset = ds.dataset(path, filesystem=_pa_fs(gcs_fs), partitioning="hive")
 
     if date_range is not None:
-        start, end = _yyyymmdd(date_range[0]), _yyyymmdd(date_range[1])
+        start, end = int(_yyyymmdd(date_range[0])), int(_yyyymmdd(date_range[1]))
         filt = (ds.field("date") >= start) & (ds.field("date") <= end)
         table = dataset.to_table(filter=filt)
     else:
         table = dataset.to_table()
 
-    # 파티션 컬럼이 파일 내부에도 저장된 경우 제거
     _PART_COLS = {"household_id", "channel", "date"}
     drop = [c for c in table.column_names if c in _PART_COLS]
     if drop:
@@ -142,7 +137,7 @@ def load_channel_data_gcs(
 # ── 라벨 로드 ─────────────────────────────────────────────────────────────────
 
 def load_all_labels_gcs(
-    gcs_fs: "pa_fs.GcsFileSystem",
+    gcs_fs: "gcsfs_type.GCSFileSystem",
     house_id: str,
     channel: str,
     date_range: tuple[str, str] | None = None,
@@ -160,7 +155,7 @@ def load_all_labels_gcs(
 
 
 def get_appliance_name_gcs(
-    gcs_fs: "pa_fs.GcsFileSystem",
+    gcs_fs: "gcsfs_type.GCSFileSystem",
     house_id: str,
     channel: str,
     label_path: str = _DEFAULT_LABEL_PATH,
@@ -168,30 +163,20 @@ def get_appliance_name_gcs(
     """channel의 가전 이름 반환. 없으면 None."""
     df = _load_labels_df(gcs_fs, label_path)
     rows = df[(df["household_id"] == house_id) & (df["channel"] == channel)]
-    if rows.empty or "name" not in rows.columns:
+    if rows.empty or "appliance_name" not in rows.columns:
         return None
-    return rows.iloc[0]["name"]
+    return rows.iloc[0]["appliance_name"]
 
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
 class GCSNILMDataset(Dataset):
-    """GCS에서 직접 읽는 NILM 슬라이딩 윈도우 데이터셋.
-
-    로컬 NILMDataset과 동일한 반환 형식.
-    채널→가전 매핑은 labels/training.parquet에서 자동 구성.
-
-    반환값:
-        aggregate : (window_size,)              float32
-        target    : (N_APPLIANCES, window_size) float32
-        on_off    : (N_APPLIANCES, window_size) bool
-        validity  : (N_APPLIANCES,)             bool
-    """
+    """GCS에서 직접 읽는 NILM 슬라이딩 윈도우 데이터셋."""
 
     def __init__(
         self,
         houses: list[str],
-        gcs_fs: "pa_fs.GcsFileSystem",
+        gcs_fs: "gcsfs_type.GCSFileSystem",
         bucket_prefix: str = _DEFAULT_RAW_PREFIX,
         label_path: str = _DEFAULT_LABEL_PATH,
         window_size: int = 1024,
@@ -202,11 +187,6 @@ class GCSNILMDataset(Dataset):
         scaler=None,
         fit_scaler: bool = False,
     ):
-        """
-        week     : 해당 주차 데이터만 (days (week-1)*7+1 ~ week*7). 학습용.
-        max_week : weeks 1..max_week 누적 데이터 (days 1 ~ max_week*7). 검증/테스트용.
-        둘 다 None이면 date_range 또는 전체 기간 사용.
-        """
         from datetime import timedelta
 
         try:
@@ -230,14 +210,12 @@ class GCSNILMDataset(Dataset):
                 continue
 
             if max_week is not None:
-                # 1주차부터 max_week주차까지 누적 (검증/테스트용)
                 start_date = get_house_start_date_gcs(gcs_fs, house_id, bucket_prefix=bucket_prefix)
                 dr: tuple[str, str] | None = (
                     start_date.isoformat(),
                     (start_date + timedelta(days=max_week * 7 - 1)).isoformat(),
                 )
             elif week is not None:
-                # 해당 주차 데이터만 (학습용)
                 start_date = get_house_start_date_gcs(gcs_fs, house_id, bucket_prefix=bucket_prefix)
                 dr = (
                     (start_date + timedelta(days=(week - 1) * 7)).isoformat(),
@@ -275,7 +253,7 @@ class GCSNILMDataset(Dataset):
                 except Exception as e:
                     print(f"[GCSNILMDataset] {house_id}/{ch} 로드 실패: {e}")
 
-            agg_power = agg_df["active_power"].to_numpy(dtype=np.float32)
+            agg_power = agg_df["active_power"].fillna(0).to_numpy(dtype=np.float32)
             if fit_scaler:
                 _all_agg.append(agg_power)
             seg_idx = len(self._segments)

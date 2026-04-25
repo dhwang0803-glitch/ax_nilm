@@ -14,7 +14,7 @@ optimizer:
 scheduler:
   name: "reduce_on_plateau"
   factor: 0.5
-  patience: 5
+  patience: 2   # early_stopping_patience(5)보다 작게 — LR 감소 후 재학습 기회 확보
 
 # 주차별 추가학습 실험 설정
 # EXP1: 처음부터 학습 (resume_from: null)
