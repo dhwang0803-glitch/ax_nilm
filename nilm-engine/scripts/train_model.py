@@ -84,7 +84,7 @@ def masked_weighted_mse(
     target: torch.Tensor,
     on_off: torch.Tensor,
     validity: torch.Tensor,
-    on_weight: float = 20.0,
+    on_weight: float = 5.0,
 ) -> torch.Tensor:
     """validity=False 채널 제외. ON 구간은 on_weight 배 가중해 trivial zero 예측 방지."""
     # pred, target, on_off: (batch, N_APPLIANCES)
