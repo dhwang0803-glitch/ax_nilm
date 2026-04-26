@@ -3,13 +3,16 @@
 에너지캐시백 기준: 직전 2개년 동월 평균.
   예) 2025년 7월 기준선 = (2023년 7월 + 2024년 7월) / 2
 
-신규 가구(2개년 데이터 미보유): 군집 평균 월 사용량으로 Proxy 적용.
+신규 가구(2개년 데이터 미보유): 소비 패턴 임베딩으로 유사 가구 top-k를 찾아
+  그 가구들의 동월 평균을 기준선으로 사용 (proxy_similar_household).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
+
+import numpy as np
 
 
 @dataclass
@@ -27,24 +30,30 @@ class BaselineRepository(Protocol):
         month: int,
     ) -> MonthlyUsage | None: ...
 
-    async def get_cluster_avg_monthly_kwh(
+    async def get_similar_households_monthly_avg(
         self,
-        cluster_label: int,
+        query_vector: np.ndarray,
         month: int,
-    ) -> float: ...
+        top_k: int = 5,
+    ) -> float:
+        """소비 패턴 임베딩 유사도로 찾은 가구들의 동월 평균 kWh."""
+        ...
 
 
 async def calc_baseline(
     household_id: str,
     ref_month: date,
-    cluster_label: int,
     repo: BaselineRepository,
+    query_vector: np.ndarray | None = None,
 ) -> tuple[float, str]:
     """월별 기준선(kWh) 반환.
 
+    Args:
+        query_vector: 신규 가구의 소비 패턴 임베딩 — proxy 경로에서만 사용.
+
     Returns:
         (baseline_kwh, method)
-        method: "2year_avg" | "proxy_cluster"
+        method: "2year_avg" | "proxy_similar_household"
     """
     prev1 = await repo.get_monthly_usage(
         household_id, ref_month.year - 2, ref_month.month
@@ -56,12 +65,16 @@ async def calc_baseline(
     if prev1 and prev2:
         return (prev1.energy_kwh + prev2.energy_kwh) / 2.0, "2year_avg"
 
-    # 한 해만 있는 경우 단년도 사용
     if prev2:
         return prev2.energy_kwh, "2year_avg"
     if prev1:
         return prev1.energy_kwh, "2year_avg"
 
-    # 신규 가구 fallback: 군집 평균 월 사용량
-    cluster_avg = await repo.get_cluster_avg_monthly_kwh(cluster_label, ref_month.month)
-    return cluster_avg, "proxy_cluster"
+    # 신규 가구 fallback: 유사 가구 동월 평균
+    if query_vector is None:
+        raise ValueError("신규 가구 기준선 계산에는 query_vector(소비 패턴 임베딩) 필요")
+
+    avg_kwh = await repo.get_similar_households_monthly_avg(
+        query_vector, ref_month.month, top_k=5
+    )
+    return avg_kwh, "proxy_similar_household"
