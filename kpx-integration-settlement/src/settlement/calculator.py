@@ -1,54 +1,77 @@
-"""DR 절감량·환급금 계산 — 공식식 / 내부식 / 정합성 보정식.
+"""에너지캐시백 산정 — 기준선 대비 절감률 → 단가 → 캐시백 금액.
 
-공식식:   가구 전체 절감량  = 가구 단위 CBL - 이벤트 구간 실제 총 사용량
-내부식:   가전별 절감량(추정) = 가전별 기준 사용량 - 가전별 NILM 추정 사용량
-보정식:   기타/미분류 절감량 = 가구 전체 절감량 - Σ(가전별 절감량)
-           (음수이면 NILM 과대추정 → UI에 추정 오차 표시)
+공식식:   절감량(kWh) = 기준선 - 실측 사용량
+보정식:   유효 절감량 = 기준선 × min(절감률, 30%)  ← 30% 상한 적용
+내부식:   가전별 절감 기여 = 가전별 기준선 - 가전별 실측 (NILM 분해 결과)
+
+캐시백 단가 구조 (KEPCO 에너지마켓플레이스 기준, 변경 가능):
+  절감률 3% 미만      → 미지급
+  3% 이상 ~ 5% 미만  → 30원/kWh
+  5% 이상 ~ 10% 미만 → 50원/kWh
+  10% 이상 ~ 20% 미만→ 70원/kWh
+  20% 이상 (30% 캡)  → 100원/kWh
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol
+from datetime import date
 
 
-class AggregatorRepository(Protocol):
-    async def get_settlement_rate(self, aggregator_id: str) -> float:
-        """aggregators 테이블에서 사업자별 정산 단가(원/kWh) 조회."""
-        ...
+# 절감률 구간별 단가 (오름차순 — (최소 절감률, 단가))
+_CASHBACK_TIERS: list[tuple[float, float]] = [
+    (0.20, 100.0),
+    (0.10, 70.0),
+    (0.05, 50.0),
+    (0.03, 30.0),
+]
+_MIN_SAVINGS_RATE = 0.03   # 3% 미만 미지급
+_MAX_SAVINGS_RATE = 0.30   # 30% 초과분 미인정
+
+
+def get_cashback_unit_rate(savings_rate: float) -> float:
+    """절감률 → 단가(원/kWh). 3% 미만이면 0."""
+    if savings_rate < _MIN_SAVINGS_RATE:
+        return 0.0
+    for threshold, rate in _CASHBACK_TIERS:
+        if savings_rate >= threshold:
+            return rate
+    return 0.0
 
 
 @dataclass
 class ApplianceSavings:
     channel_num: int
     appliance_code: str
-    channel_cbl_kwh: float
+    channel_baseline_kwh: float
     channel_actual_kwh: float
 
     @property
     def savings_kwh(self) -> float:
-        return self.channel_cbl_kwh - self.channel_actual_kwh
+        return self.channel_baseline_kwh - self.channel_actual_kwh
 
 
 @dataclass
-class DRSavingsResult:
+class CashbackResult:
     household_id: str
-    event_id: str
-    cbl_kwh: float           # 공식식 CBL
-    actual_kwh: float        # 공식식 실측
-    savings_kwh: float       # 공식식 절감량
-    refund_krw: int          # 환급금
-    settlement_rate: float   # 원/kWh
-    cbl_method: str          # "mid_6_10" | "proxy_cluster"
+    billing_month: date
+    baseline_kwh: float        # 기준선 (2개년 동월 평균)
+    actual_kwh: float          # 실측 사용량
+    savings_kwh: float         # 절감량 (음수 = 사용 증가)
+    savings_rate: float        # 절감률
+    effective_savings_kwh: float  # 유효 절감량 (30% 상한 적용)
+    cashback_rate: float       # 적용 단가 (원/kWh)
+    cashback_krw: int          # 캐시백 금액
+    baseline_method: str       # "2year_avg" | "proxy_cluster"
     appliance_savings: list[ApplianceSavings] = field(default_factory=list)
 
     @property
     def appliance_total_kwh(self) -> float:
-        """내부식 Σ(가전별 절감량)."""
+        """내부식: 가전별 절감량 합산."""
         return sum(a.savings_kwh for a in self.appliance_savings)
 
     @property
     def untracked_savings_kwh(self) -> float:
-        """보정식: 기타/미분류 절감량. 음수 = NILM 과대추정."""
+        """보정식: 미분류 절감량. 음수 = NILM 과대추정."""
         return self.savings_kwh - self.appliance_total_kwh
 
     @property
@@ -56,27 +79,33 @@ class DRSavingsResult:
         return self.untracked_savings_kwh < 0
 
 
-def calc_savings(
+def calc_cashback(
     household_id: str,
-    event_id: str,
-    cbl_kwh: float,
+    billing_month: date,
+    baseline_kwh: float,
     actual_kwh: float,
-    settlement_rate: float,
-    cbl_method: str,
+    baseline_method: str,
     appliance_savings: list[ApplianceSavings] | None = None,
-) -> DRSavingsResult:
-    """공식식 기반 절감량 및 환급금 계산."""
-    savings_kwh = cbl_kwh - actual_kwh
-    refund_krw = int(max(0.0, savings_kwh) * settlement_rate)
+) -> CashbackResult:
+    """캐시백 산정."""
+    savings_kwh = baseline_kwh - actual_kwh
+    savings_rate = savings_kwh / baseline_kwh if baseline_kwh > 0 else 0.0
 
-    return DRSavingsResult(
+    capped_rate = min(max(savings_rate, 0.0), _MAX_SAVINGS_RATE)
+    effective_savings_kwh = baseline_kwh * capped_rate
+    cashback_rate = get_cashback_unit_rate(savings_rate)
+    cashback_krw = int(effective_savings_kwh * cashback_rate)
+
+    return CashbackResult(
         household_id=household_id,
-        event_id=event_id,
-        cbl_kwh=cbl_kwh,
+        billing_month=billing_month,
+        baseline_kwh=baseline_kwh,
         actual_kwh=actual_kwh,
         savings_kwh=savings_kwh,
-        refund_krw=refund_krw,
-        settlement_rate=settlement_rate,
-        cbl_method=cbl_method,
+        savings_rate=savings_rate,
+        effective_savings_kwh=effective_savings_kwh,
+        cashback_rate=cashback_rate,
+        cashback_krw=cashback_krw,
+        baseline_method=baseline_method,
         appliance_savings=appliance_savings or [],
     )

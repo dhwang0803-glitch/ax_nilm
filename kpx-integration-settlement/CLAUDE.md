@@ -6,7 +6,7 @@
 ## 이 브랜치에서 작업 시작 체크리스트
 
 1. `config/.env.example`을 복사해 `config/.env` 생성 후 실제 값 입력
-2. `pip install anthropic sentence-transformers celery redis xgboost`
+2. `pip install openai sentence-transformers celery redis xgboost`
 3. Redis 실행 확인: `redis-cli ping`
 4. 벤치마크 실행: `python -m benchmark.run_benchmark --cbl`
 
