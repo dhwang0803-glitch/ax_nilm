@@ -18,6 +18,7 @@ cryptography>=42.0,<46.0     # Fernet (AES-256) — household_pii 암호화
 # ─── ETL 보조 ─────────────────────────────────────────────────────────
 pandas>=2.2,<3.0
 pyarrow>=15.0,<19.0          # parquet / Arrow CSV 읽기
+gcsfs>=2024.0                # GCS fsspec 어댑터 — anaconda pyarrow 가 GcsFileSystem 빌드를 포함하지 않아 우회 (load_dev10_power.py)
 
 # ─── 테스트 ───────────────────────────────────────────────────────────
 pytest>=8.0,<9.0

@@ -1,6 +1,6 @@
 # Database 추가 작업 대기 목록 (임시)
 
-> 작성일: 2026-04-26 (최초) · 갱신: 2026-04-26 (Phase B-1 메타 적재 완료)
+> 작성일: 2026-04-26 (최초) · 갱신: 2026-04-26 (Integration tests 23개 통과)
 > 작성 맥락: main 머지 후(39 커밋 동기화) 각 feature 브랜치의 DB 의존을 수집한 결과.
 > 성격: **임시 작업 노트.** 모든 항목 클로즈 후에는 본 파일을 폐기하고 `migrations/`·`schema_design.md`로 흡수한다.
 
@@ -16,16 +16,16 @@
 - **GCP 인프라 배포** — VM `ax-nilm-db-dev` (asia-northeast3-a, e2-standard-2, 100GB pd-ssd) + Postgres 16 + TimescaleDB + pgvector + ax_nilm_app 사용자 + Secret Manager. 시드 23행 검증 완료
 - 셋업 자동화 — `Database/scripts/gcp/01~03b_*.sh`, runbook `Database/docs/gcp_setup.md`
 - **Phase B-1: AI Hub 메타 적재** — `Database/scripts/load_aihub_meta.py` 작성 + 적재 완료. `households=79`, `household_channels=1045` (희소; 가구당 9~22채널), `household_daily_env=2449` (79×31일). 채널→appliance_code 매핑은 hardcode dict (한글 표기 7건 미스매치 회피). 가구ID `house_001`→`H001` 변환. ON CONFLICT DO NOTHING 으로 재실행 안전. PII 미적재 (Fernet 후속).
+- **Phase B-5: dev10 power 적재** — `Database/scripts/load_dev10_power.py` 5208 파티션 전량 적재. `power_1min` **7,499,520 rows**, 10 가구 / 168 (household, channel) pair, 시간범위 2023-09-27 15:00 ~ 2023-11-15 14:59 UTC. FAIL 0, ~6 시간 소요(처리율 ~14 partitions/min). KST→UTC 변환, ON CONFLICT DO NOTHING (재실행 안전), per-partition commit + try/except 로 pool 보호. retention 7일 정책은 schemas/002 line 190 주석 처리 상태라 2023년 데이터 자동 drop 안 됨 (OK).
+- **Phase B-6: Integration tests** — `Database/tests/` 5 개 모듈 23 케이스 전량 통과 (30s). `pytest.ini` (`asyncio_mode=auto` + session-scoped loop), `conftest.py` (.env 자동 로드 + Secret Manager fallback + `H901` 격리 가구 픽스처 with CASCADE cleanup). 검증: 확장/시드/마이그레이션 적용, `record_transition` 트랜잭션, EXCLUDE gist 위반, FK CASCADE/RESTRICT, Fernet 라운드트립.
 
 **⏳ Phase B 대기 (다음 세션)**:
 1. **팀원 IAM 부여** — 현재 본인 계정만 접근 가능. `roles/iap.tunnelResourceAccessor` + `roles/compute.osLogin` + `roles/secretmanager.secretAccessor` (대상자 명단 회신 후 일괄 처리)
 2. **`Database/docs/team_onboarding.md`** — 새 환경에서 5분 안에 connect 가능한 walkthrough
 3. **Fernet 키 발급 + Secret Manager 등록** (`ax-nilm-credential-master-key`) — 미등록 시 PIIRepository 인스턴스화 실패. 등록 후 `household_pii` 79행 적재 (address/members/income_dual/utility_facilities/extra_appliances)
-4. **dev10 power 적재 스크립트** — GCS `nilm/training_dev10/` parquet → `power_1min` (10가구 분량 hot tier 채움)
-5. **Integration tests** — `Database/tests/`, IAP 터널 활성 상태에서 pytest
 
-**🔧 알려진 사소한 버그 (Phase B 안에 함께)**:
-- `power_1hour` cagg 의 `COMMENT ON MATERIALIZED VIEW` 한 줄만 실패 (TimescaleDB cagg 가 표준 MV 가 아님). 데이터/인덱스 영향 없음. 수정 마이그레이션: `COMMENT ON VIEW power_1hour ...`
+**🔧 알려진 사소한 버그 (해결)**:
+- ~~`power_1hour` cagg 의 `COMMENT ON MATERIALIZED VIEW` 한 줄만 실패~~ — `migrations/20260427_08_fix_power_1hour_comment.sql` 발행 + 적용 완료 (sudo -u postgres 권한, view owner 가 postgres 라 app user 로는 COMMENT 불가). `obj_description('power_1hour'::regclass)` 로 검증 OK
 
 **미결정 (외부 의존)**:
 - P1 임베딩 차원 (KPX ADR 미발행) → 결정 후 `ALTER COLUMN embedding TYPE vector(N)` + IVFFlat/HNSW 인덱스 추가 마이그레이션
@@ -194,16 +194,21 @@
    ```
    - PII 적재: 1번에서 이미 79가구 households 가 있으므로 `household_pii` 만 INSERT. address/members 는 Fernet 암호화 BYTEA, 나머지(income_dual/utility_facilities/extra_appliances) 는 평문. extra_appliances 원소 `strip()` 처리.
 
-5. **dev10 power 적재**
+5. **dev10 power 적재** ✅ (2026-04-26 완료)
    - 스크립트: `Database/scripts/load_dev10_power.py`
    - 입력: GCS `gs://ax-nilm-data-dhwang0803/nilm/training_dev10/` (10가구 raw parquet, hive partition)
    - 변환: 30Hz raw → 1분 버킷 집계 (avg/min/max + energy_wh 적분) → `power_1min` INSERT
    - 의존: 1번 메타 적재 완료 ✓ (FK)
+   - 결과: 5208 파티션 = 7,499,520 rows, 10 가구 / 168 (household, channel) pair, 시간범위 2023-09-27 15:00 ~ 2023-11-15 14:59 UTC. FAIL 0, ~6 시간 소요(~14 partitions/min). 재실행 시 ON CONFLICT DO NOTHING 으로 NO-OP 통과.
 
-6. **Integration tests** (`Database/tests/`)
-   - IAP 터널 활성 상태에서 pytest
-   - Repository 단위: `record_transition` 트랜잭션, EXCLUDE gist 위반, FK CASCADE
-   - 시작점: `tests/conftest.py` (`session_scope` 픽스처) + `test_smoke.py` (extension/seed 검증)
+6. **Integration tests** ✅ (2026-04-26 완료, 23 케이스 통과)
+   - `Database/pytest.ini` — `asyncio_mode=auto` + session-scoped loop (function scope 시 Windows ProactorEventLoop + asyncpg 의 "Event loop is closed" 발생)
+   - `tests/conftest.py` — `Database/.env` 자동 로드 + Secret Manager fallback (CLOUDSDK_PYTHON 자동 적용, gcloud.cmd 절대경로 호출), `H901` 격리 가구 픽스처 (CASCADE cleanup)
+   - `test_smoke.py` — 확장 3개, 시드 23/22/12, hypertable, cagg, Phase B 적재 분량 sanity
+   - `test_nilm_inference_repository.py` — `record_transition` 단일 트랜잭션, EXCLUDE gist 위반, model_version 격리, confidence 필터
+   - `test_activity_repository.py` — EXCLUDE gist (시간 겹침), CHECK (`start<end`), 채널 격리
+   - `test_fk_cascade.py` — households CASCADE → pii/channels/daily_env/activity, appliance_types RESTRICT
+   - `test_pii_repository.py` — Fernet 라운드트립, 키 누락/형식오류 fail-fast, 키 회전 시 None 반환(평문 추론 차단)
 
 7. **`power_1hour` COMMENT 수정 마이그레이션** (사소)
    - `migrations/20260427_XX_fix_power_1hour_comment.sql`
