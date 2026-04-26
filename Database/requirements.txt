@@ -1,0 +1,24 @@
+# ax_nilm Database 모듈 의존성
+# Python 3.11+ 권장
+#
+# 설치: pip install -r Database/requirements.txt
+# 본 파일은 Database/ 모듈 단독 의존성. 다른 브랜치(Execution_Engine 등)는 별도 관리.
+
+# ─── ORM / DB 드라이버 ────────────────────────────────────────────────
+SQLAlchemy[asyncio]>=2.0.30,<2.1
+asyncpg>=0.29,<0.30          # PostgreSQL async 드라이버 (FastAPI 호환)
+
+# ─── 확장 ─────────────────────────────────────────────────────────────
+pgvector>=0.2.5,<0.4         # household_embeddings 컬럼 타입 (vector)
+# timescaledb 자체 확장은 PostgreSQL 서버 측 — 클라이언트 라이브러리 불필요
+
+# ─── 보안 ─────────────────────────────────────────────────────────────
+cryptography>=42.0,<46.0     # Fernet (AES-256) — household_pii 암호화
+
+# ─── ETL 보조 ─────────────────────────────────────────────────────────
+pandas>=2.2,<3.0
+pyarrow>=15.0,<19.0          # parquet / Arrow CSV 읽기
+
+# ─── 테스트 ───────────────────────────────────────────────────────────
+pytest>=8.0,<9.0
+pytest-asyncio>=0.23,<0.25
