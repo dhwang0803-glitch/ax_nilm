@@ -1,8 +1,10 @@
 # 팀원 DB 접근 온보딩 — 5분 가이드
 
 > **대상**: ax_nilm 프로젝트 팀원 — 본인 GCP 계정에 IAM 부여를 이미 받은 상태에서 처음 dev DB (`ax-nilm-db-dev`) 에 접속
-> **사전 조건**: project owner 가 본인 계정에 다음 3개 role 부여 완료 (관리자가 일괄 부여) —
-> `roles/iap.tunnelResourceAccessor`, `roles/compute.osLogin`, `roles/secretmanager.secretAccessor`
+> **사전 조건**: project owner 가 본인 계정에 다음 권한 부여 완료 (관리자가 일괄 부여) —
+> 프로젝트 레벨: `roles/iap.tunnelResourceAccessor`, `roles/compute.osLogin`
+> Secret 레벨 (`ax-nilm-db-team-password` 에만): `roles/secretmanager.secretAccessor`
+> ※ `ax-nilm-credential-master-key` (Fernet 키), `ax-nilm-db-app-password` (owner ETL 용) 는 의도적으로 미부여 — PII 평문 복호화 + 시드/그라운드트루스 변조 차단 (REQ-007)
 > **VM/스키마 셋업은 본 문서 범위 외** — 인프라 구축은 [`gcp_setup.md`](./gcp_setup.md) 참조
 
 ---
@@ -30,19 +32,33 @@ gcloud 로그인 → .env 로드 → IAP 터널 (별도 셸) → DSN 조립 → 
 ```
 
 ### 1.3 IAM 확인 (관리자 부여가 적용됐는지 self-check)
+
+**프로젝트 레벨 — 2개 role 보여야 함:**
 ```bash
 gcloud projects get-iam-policy ax-nilm \
     --flatten="bindings[].members" \
     --format="value(bindings.role)" \
     --filter="bindings.members:user:$(gcloud config get-value account)"
 ```
-다음 3개 줄이 보여야 함:
 ```
 roles/iap.tunnelResourceAccessor
 roles/compute.osLogin
-roles/secretmanager.secretAccessor
 ```
+
+**Secret 레벨 — `ax-nilm-db-team-password` 에 본인 계정 보여야 함:**
+```bash
+gcloud secrets get-iam-policy ax-nilm-db-team-password \
+    --flatten="bindings[].members" \
+    --filter="bindings.members:user:$(gcloud config get-value account)" \
+    --format="value(bindings.role)"
+# → roles/secretmanager.secretAccessor
+```
+
 없으면 owner(`dhwang0803@gmail.com`) 에게 요청.
+
+> **참고**:
+> - `ax-nilm-credential-master-key` (Fernet 키, PII 복호화용) 는 분석 역할에 부여하지 않음 — PII 평문 접근은 관리자 전용 endpoint 에서만 (REQ-007)
+> - `ax-nilm-db-app-password` (owner ETL 용 PG 비번) 도 미부여 — 팀원은 `ax_nilm_team` 역할로만 접속하여 시드/메타/그라운드트루스 변조 차단
 
 ---
 
@@ -58,6 +74,11 @@ cd ax_nilm
 - `Database/.env` 는 **gitignore 대상**이라 repo 에 없음
 - owner 에게 별도 안전 채널(1Password / Bitwarden / 사내 보안 채널)로 요청
 - 받은 .env 를 `Database/.env` 로 저장. **절대 커밋 금지** (root `CLAUDE.md` 보안 규칙)
+- 팀원용 .env 는 owner 의 .env 와 두 줄이 다름 (owner 가 발송 시 이미 반영됨):
+  ```
+  APP_USER=ax_nilm_team
+  SECRET_NAME=ax-nilm-db-team-password
+  ```
 
 ### 2.3 환경변수 로드 (셸을 새로 열 때마다 1회)
 ```bash
@@ -119,6 +140,27 @@ PGPASSWORD="$APP_PWD" psql \
 ### 4.3 PII 복호화는 별도 키 필요
 `household_pii.address_enc`, `members_enc` 는 Fernet 암호화 BYTEA. 복호화하려면 `CREDENTIAL_MASTER_KEY` 시크릿 추가 부여 필요 (분석 역할은 기본 불가 — 권한 분리 정책).
 
+### 4.4 적재 가능 테이블 (DML 권한 매트릭스)
+
+`ax_nilm_team` 역할은 **모든 테이블 SELECT 가능**, INSERT/UPDATE/DELETE 는 모델 결과 적재 테이블 6개에만:
+
+| 테이블 | 용도 | 적재 주체 |
+|---|---|---|
+| `appliance_status_intervals` | NILM 모델 출력 (상태 전환 구간) | nilm-engine |
+| `household_embeddings` | 가구 임베딩 | embedding/KPX |
+| `dr_events` | DR 이벤트 헤더 | KPX |
+| `dr_results` | 가구별 DR 정산 | KPX |
+| `dr_appliance_savings` | 채널별 DR 분해 | KPX |
+| `ingestion_log` | ETL 이력 | 모든 적재 작업 |
+
+**SELECT only (동결)**: 시드(`appliance_types`, `appliance_status_codes`, `aggregators`), 메타(`households`, `household_channels`, `household_daily_env`), PII(`household_pii`), 그라운드트루스(`activity_intervals`), raw power(`power_1min`, `power_1hour`).
+
+새로운 적재 테이블이 필요하면 owner 에게 요청 → `migrations/` 에 GRANT 추가 후 재적용.
+
+**개발 중 데이터 정리** (재실행 시):
+- ON CONFLICT DO NOTHING upsert 로 멱등성 보장된 적재 스크립트면 그대로 재실행 가능
+- 본인 작업분만 정리하려면 `model_version` / `event_id` / `embed_model` 등 격리 키로 좁혀서 `DELETE FROM ... WHERE <본인키>`
+
 ---
 
 ## 5. 보안 체크리스트 (커밋 전)
@@ -138,7 +180,8 @@ PGPASSWORD="$APP_PWD" psql \
 | `Permission 'iap.tunnelInstances.accessViaIAP' denied` | IAM 미부여 — §1.3 self-check 후 owner 에게 요청 |
 | `Permission denied on secret` | `roles/secretmanager.secretAccessor` 미부여 |
 | `psql: could not connect to server` | IAP 터널이 죽었거나 다른 셸에서 실행 안 됨 — §3.1 재시작 |
-| `permission denied for table ...` (Python) | `ax_nilm_app` 은 DML 만. DDL/스키마 변경은 owner 에게 요청 |
+| `permission denied for table households` (UPDATE/DELETE) | 동결 테이블 — 팀원은 SELECT only. §4.4 매트릭스 참조 |
+| `permission denied for relation <DDL>` | DDL/스키마 변경은 owner 에게 요청 (CREATE/ALTER/DROP/TRUNCATE 모두 차단) |
 | `extension "timescaledb" is not available` | VM init 미완 — owner 에게 보고 (팀원 책임 외) |
 | Bash 에서 gcloud 가 hang / Python 에러 | `.env` 의 `CLOUDSDK_PYTHON` 절대경로 따옴표 확인 |
 | 5436 이 다른 프로세스로 점유 | `.env` 의 `LOCAL_PG_PORT` 를 다른 미사용 포트로 변경 |
