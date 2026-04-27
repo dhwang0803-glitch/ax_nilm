@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -171,7 +173,7 @@ def get_appliance_name_gcs(
 # ── Dataset ───────────────────────────────────────────────────────────────────
 
 class GCSNILMDataset(Dataset):
-    """GCS에서 직접 읽는 NILM 슬라이딩 윈도우 데이터셋."""
+    """GCS에서 직접 읽는 NILM 이벤트 기반 샘플링 데이터셋."""
 
     def __init__(
         self,
@@ -186,7 +188,15 @@ class GCSNILMDataset(Dataset):
         max_week: int | None = None,
         scaler=None,
         fit_scaler: bool = False,
+        cache_dir: str | Path | None = None,
+        event_context: int | None = None,
+        steady_stride: int | None = None,
     ):
+        """
+        event_context : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
+        steady_stride : 정상 구간 커버리지 stride. None이면 stride × 20 자동 설정.
+        cache_dir     : _segments(raw numpy)만 캐시. window_index는 항상 재생성.
+        """
         from datetime import timedelta
 
         try:
@@ -196,79 +206,145 @@ class GCSNILMDataset(Dataset):
             from acquisition.preprocessor import PowerScaler
             from acquisition.loader import build_active_mask
 
+        try:
+            from .dataset import _event_window_starts
+        except ImportError:
+            from acquisition.dataset import _event_window_starts
+
         self.window_size = window_size
         self.stride = stride
         self.scaler = scaler
+
+        # 캐시 키: 샘플링 파라미터 제외 — window_index는 항상 재생성
+        _key = hashlib.md5(
+            f"{sorted(houses)}|{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}".encode()
+        ).hexdigest()[:12]
+        self.cache_key = _key
+        _cache_path = Path(cache_dir) / f"nilm_gcs_{_key}.npz" if cache_dir else None
+
         self._segments: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         self._window_index: list[tuple[int, int]] = []
         _all_agg: list[np.ndarray] = []
 
-        for house_id in houses:
-            channels = list_channels_gcs(gcs_fs, house_id, bucket_prefix)
-            if "ch01" not in channels:
-                print(f"[GCSNILMDataset] {house_id}: ch01 없음 — 스킵")
-                continue
-
-            if max_week is not None:
-                start_date = get_house_start_date_gcs(gcs_fs, house_id, bucket_prefix=bucket_prefix)
-                dr: tuple[str, str] | None = (
-                    start_date.isoformat(),
-                    (start_date + timedelta(days=max_week * 7 - 1)).isoformat(),
-                )
-            elif week is not None:
-                start_date = get_house_start_date_gcs(gcs_fs, house_id, bucket_prefix=bucket_prefix)
-                dr = (
-                    (start_date + timedelta(days=(week - 1) * 7)).isoformat(),
-                    (start_date + timedelta(days=week * 7 - 1)).isoformat(),
-                )
-            else:
-                dr = date_range
-
-            agg_df = load_channel_data_gcs(gcs_fs, house_id, "ch01", dr, bucket_prefix)
-            timestamps = agg_df["date_time"]
-            n_samples = len(agg_df)
-
-            target_power = np.zeros((N_APPLIANCES, n_samples), dtype=np.float32)
-            on_off_mask = np.zeros((N_APPLIANCES, n_samples), dtype=bool)
-            validity = np.zeros(N_APPLIANCES, dtype=bool)
-
-            for ch in channels:
-                if ch == "ch01":
-                    continue
-                name = get_appliance_name_gcs(gcs_fs, house_id, ch, label_path)
-                if name not in APPLIANCE_INDEX:
-                    continue
-                idx = APPLIANCE_INDEX[name]
-                try:
-                    tgt_df = load_channel_data_gcs(gcs_fs, house_id, ch, dr, bucket_prefix)
-                    merged = agg_df[["date_time"]].merge(
-                        tgt_df[["date_time", "active_power"]],
-                        on="date_time",
-                        how="left",
-                    )
-                    target_power[idx] = merged["active_power"].fillna(0).to_numpy(dtype=np.float32)
-                    tgt_labels = load_all_labels_gcs(gcs_fs, house_id, ch, dr, label_path)
-                    on_off_mask[idx] = build_active_mask(tgt_labels, timestamps)
-                    validity[idx] = True
-                except Exception as e:
-                    print(f"[GCSNILMDataset] {house_id}/{ch} 로드 실패: {e}")
-
-            agg_power = agg_df["active_power"].fillna(0).to_numpy(dtype=np.float32)
+        # ── 1단계: _segments 로드 (캐시 우선) ────────────────────────────────
+        if _cache_path and _cache_path.exists():
+            _d = np.load(str(_cache_path))
+            n_seg = int(_d["n_segments"])
+            self._segments = [
+                (_d[f"agg_{i}"], _d[f"target_{i}"], _d[f"on_off_{i}"], _d[f"validity_{i}"])
+                for i in range(n_seg)
+            ]
             if fit_scaler:
-                _all_agg.append(agg_power)
-            seg_idx = len(self._segments)
-            self._segments.append((agg_power, target_power, on_off_mask, validity))
-            for start in range(0, n_samples - window_size + 1, stride):
-                self._window_index.append((seg_idx, start))
+                _all_agg = [seg[0] for seg in self._segments]
+            print(f"[GCSNILMDataset] 캐시 로드: {_cache_path.name}")
+        else:
+            for house_id in houses:
+                channels = list_channels_gcs(gcs_fs, house_id, bucket_prefix)
+                if "ch01" not in channels:
+                    print(f"[GCSNILMDataset] {house_id}: ch01 없음 — 스킵")
+                    continue
 
+                if max_week is not None:
+                    start_date = get_house_start_date_gcs(gcs_fs, house_id, bucket_prefix=bucket_prefix)
+                    dr: tuple[str, str] | None = (
+                        start_date.isoformat(),
+                        (start_date + timedelta(days=max_week * 7 - 1)).isoformat(),
+                    )
+                elif week is not None:
+                    start_date = get_house_start_date_gcs(gcs_fs, house_id, bucket_prefix=bucket_prefix)
+                    dr = (
+                        (start_date + timedelta(days=(week - 1) * 7)).isoformat(),
+                        (start_date + timedelta(days=week * 7 - 1)).isoformat(),
+                    )
+                else:
+                    dr = date_range
+
+                agg_df = load_channel_data_gcs(gcs_fs, house_id, "ch01", dr, bucket_prefix)
+                timestamps = agg_df["date_time"]
+                n_samples = len(agg_df)
+
+                target_power = np.zeros((N_APPLIANCES, n_samples), dtype=np.float32)
+                on_off_mask = np.zeros((N_APPLIANCES, n_samples), dtype=bool)
+                validity = np.zeros(N_APPLIANCES, dtype=bool)
+
+                for ch in channels:
+                    if ch == "ch01":
+                        continue
+                    name = get_appliance_name_gcs(gcs_fs, house_id, ch, label_path)
+                    if name not in APPLIANCE_INDEX:
+                        continue
+                    idx = APPLIANCE_INDEX[name]
+                    try:
+                        tgt_df = load_channel_data_gcs(gcs_fs, house_id, ch, dr, bucket_prefix)
+                        merged = agg_df[["date_time"]].merge(
+                            tgt_df[["date_time", "active_power"]],
+                            on="date_time",
+                            how="left",
+                        )
+                        target_power[idx] = merged["active_power"].fillna(0).to_numpy(dtype=np.float32)
+                        tgt_labels = load_all_labels_gcs(gcs_fs, house_id, ch, dr, label_path)
+                        on_off_mask[idx] = build_active_mask(tgt_labels, timestamps)
+                        validity[idx] = True
+                    except Exception as e:
+                        print(f"[GCSNILMDataset] {house_id}/{ch} 로드 실패: {e}")
+
+                agg_power = agg_df["active_power"].fillna(0).to_numpy(dtype=np.float32)
+                if fit_scaler:
+                    _all_agg.append(agg_power)
+                self._segments.append((agg_power, target_power, on_off_mask, validity))
+
+            if _cache_path:
+                Path(cache_dir).mkdir(parents=True, exist_ok=True)
+                _save: dict = {"n_segments": np.array(len(self._segments))}
+                for i, (agg, tgt, on_off, val) in enumerate(self._segments):
+                    _save[f"agg_{i}"] = agg
+                    _save[f"target_{i}"] = tgt
+                    _save[f"on_off_{i}"] = on_off
+                    _save[f"validity_{i}"] = val
+                np.savez_compressed(str(_cache_path), **_save)
+                print(f"[GCSNILMDataset] 캐시 저장: {_cache_path.name}")
+
+        # ── 2단계: scaler fit & 적용 ──────────────────────────────────────────
         if fit_scaler and _all_agg:
             self.scaler = PowerScaler().fit(np.concatenate(_all_agg))
 
         if self.scaler is not None:
             self._segments = [
-                (self.scaler.transform(agg), self.scaler.transform(tgt), on_off, validity)
+                (self.scaler.transform(agg), self.scaler.transform_target(tgt), on_off, validity)
                 for agg, tgt, on_off, validity in self._segments
             ]
+
+        # ── 3단계: window_index 생성 (항상 재생성, 캐시 불필요) ───────────────
+        _ss = steady_stride if steady_stride is not None else stride * 20
+        total_transitions = 0
+        total_event_windows = 0
+        total_steady_windows = 0
+
+        for seg_idx, (agg, _, on_off, validity) in enumerate(self._segments):
+            n_samples = len(agg)
+            if event_context is not None:
+                starts, n_trans, n_event, n_steady = _event_window_starts(
+                    on_off, validity, n_samples, window_size, stride, event_context, _ss
+                )
+                total_transitions += n_trans
+                total_event_windows += n_event
+                total_steady_windows += n_steady
+            else:
+                starts = range(0, n_samples - window_size + 1, stride)
+
+            for s in starts:
+                self._window_index.append((seg_idx, s))
+
+        if event_context is not None:
+            _ratio = total_steady_windows / total_event_windows if total_event_windows > 0 else float("inf")
+            print(
+                f"[GCSNILMDataset] event_context={event_context}  steady_stride={_ss}  전환점={total_transitions:,}\n"
+                f"  이벤트 윈도우={total_event_windows:,} / 정상 전용={total_steady_windows:,}"
+                f"  → 비율 1:{_ratio:.1f}\n"
+                f"  총 {len(self._window_index):,} windows"
+            )
+        else:
+            print(f"[GCSNILMDataset] full sliding  →  {len(self._window_index):,} windows")
 
     def __len__(self) -> int:
         return len(self._window_index)
