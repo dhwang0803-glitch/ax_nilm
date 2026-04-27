@@ -215,30 +215,39 @@ class GCSNILMDataset(Dataset):
         self.stride = stride
         self.scaler = scaler
 
-        # 캐시 키: 샘플링 파라미터 제외 — window_index는 항상 재생성
-        _key = hashlib.md5(
+        # cache_key: TDA 캐시 파일명 등 외부에서 참조용 (전체 파라미터 해시)
+        self.cache_key = hashlib.md5(
             f"{sorted(houses)}|{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}".encode()
         ).hexdigest()[:12]
-        self.cache_key = _key
-        _cache_path = Path(cache_dir) / f"nilm_gcs_{_key}.npz" if cache_dir else None
+
+        # 주차/기간 파라미터 해시 — house별 캐시 파일명에 사용
+        _week_key = hashlib.md5(
+            f"{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}".encode()
+        ).hexdigest()[:8]
 
         self._segments: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         self._window_index: list[tuple[int, int]] = []
         _all_agg: list[np.ndarray] = []
 
-        # ── 1단계: _segments 로드 (캐시 우선) ────────────────────────────────
-        if _cache_path and _cache_path.exists():
-            _d = np.load(str(_cache_path))
-            n_seg = int(_d["n_segments"])
-            self._segments = [
-                (_d[f"agg_{i}"], _d[f"target_{i}"], _d[f"on_off_{i}"], _d[f"validity_{i}"])
-                for i in range(n_seg)
-            ]
-            if fit_scaler:
-                _all_agg = [seg[0] for seg in self._segments]
-            print(f"[GCSNILMDataset] 캐시 로드: {_cache_path.name}")
-        else:
-            for house_id in houses:
+        # ── 1단계: house별 캐시 로드 또는 GCS 빌드 ────────────────────────────
+        # 캐시를 house별로 분리해 빌드 시 메모리를 house 하나 분량만 사용
+        if cache_dir:
+            Path(cache_dir).mkdir(parents=True, exist_ok=True)
+
+        for house_id in houses:
+            _hcache = (
+                Path(cache_dir) / f"nilm_gcs_{house_id}_{_week_key}.npz"
+                if cache_dir else None
+            )
+
+            if _hcache and _hcache.exists():
+                _d = np.load(str(_hcache))
+                agg_power    = _d["agg"]
+                target_power = _d["target"]
+                on_off_mask  = _d["on_off"]
+                validity     = _d["validity"]
+                print(f"[GCSNILMDataset] 캐시 로드: {_hcache.name}")
+            else:
                 channels = list_channels_gcs(gcs_fs, house_id, bucket_prefix)
                 if "ch01" not in channels:
                     print(f"[GCSNILMDataset] {house_id}: ch01 없음 — 스킵")
@@ -264,8 +273,8 @@ class GCSNILMDataset(Dataset):
                 n_samples = len(agg_df)
 
                 target_power = np.zeros((N_APPLIANCES, n_samples), dtype=np.float32)
-                on_off_mask = np.zeros((N_APPLIANCES, n_samples), dtype=bool)
-                validity = np.zeros(N_APPLIANCES, dtype=bool)
+                on_off_mask  = np.zeros((N_APPLIANCES, n_samples), dtype=bool)
+                validity     = np.zeros(N_APPLIANCES, dtype=bool)
 
                 for ch in channels:
                     if ch == "ch01":
@@ -289,20 +298,18 @@ class GCSNILMDataset(Dataset):
                         print(f"[GCSNILMDataset] {house_id}/{ch} 로드 실패: {e}")
 
                 agg_power = agg_df["active_power"].fillna(0).to_numpy(dtype=np.float32)
-                if fit_scaler:
-                    _all_agg.append(agg_power)
-                self._segments.append((agg_power, target_power, on_off_mask, validity))
 
-            if _cache_path:
-                Path(cache_dir).mkdir(parents=True, exist_ok=True)
-                _save: dict = {"n_segments": np.array(len(self._segments))}
-                for i, (agg, tgt, on_off, val) in enumerate(self._segments):
-                    _save[f"agg_{i}"] = agg
-                    _save[f"target_{i}"] = tgt
-                    _save[f"on_off_{i}"] = on_off
-                    _save[f"validity_{i}"] = val
-                np.savez_compressed(str(_cache_path), **_save)
-                print(f"[GCSNILMDataset] 캐시 저장: {_cache_path.name}")
+                if _hcache:
+                    np.savez_compressed(
+                        str(_hcache),
+                        agg=agg_power, target=target_power,
+                        on_off=on_off_mask, validity=validity,
+                    )
+                    print(f"[GCSNILMDataset] 캐시 저장: {_hcache.name}")
+
+            if fit_scaler:
+                _all_agg.append(agg_power)
+            self._segments.append((agg_power, target_power, on_off_mask, validity))
 
         # ── 2단계: scaler fit & 적용 ──────────────────────────────────────────
         if fit_scaler and _all_agg:
