@@ -1,6 +1,7 @@
 training:
   epochs: 15
-  batch_size: 32
+  batch_size: 256        # seq2point, cnn_tda 기본값
+  batch_size_bert: 64   # bert4nilm: window=1024 quadratic attention 메모리 제약
   learning_rate: 0.001
   early_stopping_patience: 5
   loss_weights:
