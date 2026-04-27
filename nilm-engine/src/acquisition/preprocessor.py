@@ -30,6 +30,10 @@ class PowerScaler:
     def transform(self, series: np.ndarray) -> np.ndarray:
         return ((series - self.mean) / self.std).astype(np.float32)
 
+    def transform_target(self, series: np.ndarray) -> np.ndarray:
+        """가전 target 전용: mean을 빼지 않고 std로만 나눔. OFF=0 보장."""
+        return (series / self.std).astype(np.float32)
+
     def inverse_transform(self, series: np.ndarray) -> np.ndarray:
         return (series * self.std + self.mean).astype(np.float32)
 

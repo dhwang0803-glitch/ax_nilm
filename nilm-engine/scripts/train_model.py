@@ -44,17 +44,30 @@ def _compute_tda_one(agg_np: np.ndarray) -> np.ndarray:
 class _NILMDatasetWithTDA(Dataset):
     """NILMDataset에 TDA 특징을 추가한 래퍼 (cnn_tda 전용)."""
 
-    def __init__(self, base: NILMDataset):
+    def __init__(self, base: NILMDataset, cache_dir: Path | None = None):
         self.base = base
         n = len(base)
-        print(f"  TDA 사전 계산 중... ({n:,}개)", flush=True)
-        from joblib import Parallel, delayed
-        signals = [base[i][0].numpy() for i in range(n)]
-        results = Parallel(n_jobs=-1, backend="loky")(
-            delayed(_compute_tda_one)(s) for s in signals
-        )
-        self._tda = torch.from_numpy(np.stack(results))
-        print("  TDA 사전 계산 완료", flush=True)
+
+        _tda_cache: Path | None = None
+        if cache_dir is not None and hasattr(base, "cache_key"):
+            _tda_cache = cache_dir / f"tda_{base.cache_key}.pt"
+
+        if _tda_cache is not None and _tda_cache.exists():
+            self._tda = torch.load(str(_tda_cache), weights_only=True)
+            print(f"  TDA 캐시 로드: {_tda_cache.name}  ({n:,} windows)", flush=True)
+        else:
+            print(f"  TDA 사전 계산 중... ({n:,}개)", flush=True)
+            from joblib import Parallel, delayed
+            signals = [base[i][0].numpy() for i in range(n)]
+            results = Parallel(n_jobs=-1, backend="loky")(
+                delayed(_compute_tda_one)(s) for s in signals
+            )
+            self._tda = torch.from_numpy(np.stack(results))
+            print("  TDA 사전 계산 완료", flush=True)
+            if _tda_cache is not None:
+                _tda_cache.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(self._tda, str(_tda_cache))
+                print(f"  TDA 캐시 저장: {_tda_cache.name}", flush=True)
 
     def __len__(self) -> int:
         return len(self.base)
@@ -135,7 +148,7 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     raw_thr  = np.array(get_on_thresholds(), dtype=np.float32)
     scaler   = loader.dataset.scaler if hasattr(loader.dataset, "scaler") else \
                loader.dataset.base.scaler
-    norm_thr = (raw_thr - scaler.mean) / scaler.std if scaler is not None else raw_thr
+    norm_thr = (raw_thr / scaler.std) if scaler is not None else raw_thr
     pred_on  = pred_arr >= norm_thr[np.newaxis, :]
 
     valid_mask = valid_arr > 0
@@ -148,7 +161,6 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     rmse = float(np.sqrt(((p - t) ** 2).mean()))
     sae  = float(np.abs(pred_arr.sum(axis=0) - true_arr.sum(axis=0)).sum()
                  / (true_arr.sum() + 1e-8))
-    r2   = float(_r2(p, t))
 
     tp   = float((p_on & t_on).sum())
     fp   = float((p_on & ~t_on).sum())
@@ -160,7 +172,7 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     for i, name in enumerate(APPLIANCE_LABELS):
         col_valid = valid_arr[:, i] > 0
         if not col_valid.any():
-            per_appliance[name] = {"mae": None, "rmse": None, "r2": None, "f1": None}
+            per_appliance[name] = {"mae": None, "rmse": None, "f1": None}
             continue
         pi    = pred_arr[col_valid, i]
         ti    = true_arr[col_valid, i]
@@ -172,19 +184,12 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
         per_appliance[name] = {
             "mae":  float(np.abs(pi - ti).mean()),
             "rmse": float(np.sqrt(((pi - ti) ** 2).mean())),
-            "r2":   float(_r2(pi, ti)),
             "f1":   2 * tp_i / (2 * tp_i + fp_i + fn_i + 1e-8),
         }
 
-    return {"mae": mae, "rmse": rmse, "sae": sae, "r2": r2, "f1": f1,
+    return {"mae": mae, "rmse": rmse, "sae": sae, "f1": f1,
             "per_appliance": per_appliance}
 
-
-def _r2(pred: np.ndarray, true: np.ndarray) -> float:
-    """R² (결정계수). 음수면 모델이 평균 예측보다 나쁨 (0 예측 의심)."""
-    ss_res = ((pred - true) ** 2).sum()
-    ss_tot = ((true - true.mean()) ** 2).sum()
-    return 1.0 - ss_res / (ss_tot + 1e-8)
 
 
 # ── 학습 루프 ─────────────────────────────────────────────────────────────────
@@ -195,34 +200,45 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     model_name: str,
     device: torch.device,
+    amp_scaler: torch.cuda.amp.GradScaler | None = None,
 ) -> float:
     model.train()
     total_loss = 0.0
+    use_amp = amp_scaler is not None and device.type == "cuda"
 
     for batch in loader:
         optimizer.zero_grad()
 
-        if model_name == "cnn_tda":
-            agg, tda, target, on_off, validity = batch
-            agg = agg.unsqueeze(1).to(device)
-            tda = tda.to(device)
-            pred, _ = model(agg, tda)
-        elif model_name == "seq2point":
-            agg, target, on_off, validity = batch
-            pred = model(agg.unsqueeze(1).to(device))
-        else:  # bert4nilm
-            agg, target, on_off, validity = batch
-            pred = model(agg.to(device))
+        with torch.autocast(device_type=device.type, enabled=use_amp):
+            if model_name == "cnn_tda":
+                agg, tda, target, on_off, validity = batch
+                agg = agg.unsqueeze(1).to(device)
+                tda = tda.to(device)
+                pred, _ = model(agg, tda)
+            elif model_name == "seq2point":
+                agg, target, on_off, validity = batch
+                pred = model(agg.unsqueeze(1).to(device))
+            else:  # bert4nilm
+                agg, target, on_off, validity = batch
+                pred = model(agg.to(device))
 
-        center = target.shape[-1] // 2
-        target_c = target[:, :, center].to(device)
-        on_off_c = on_off[:, :, center].to(device)
-        validity = validity.to(device)
+            center = target.shape[-1] // 2
+            target_c = target[:, :, center].to(device)
+            on_off_c = on_off[:, :, center].to(device)
+            validity = validity.to(device)
 
-        loss = masked_weighted_mse(pred, target_c, on_off_c, validity)
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
+            loss = masked_weighted_mse(pred, target_c, on_off_c, validity)
+
+        if use_amp:
+            amp_scaler.scale(loss).backward()
+            amp_scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            amp_scaler.step(optimizer)
+            amp_scaler.update()
+        else:
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
         total_loss += loss.item()
 
@@ -238,6 +254,7 @@ def main():
     parser.add_argument("--data-root", required=True, help="AIHub 데이터셋 루트 경로")
     parser.add_argument("--config-dir", default=str(_NILM_ROOT / "config"))
     parser.add_argument("--no-mlflow", action="store_true")
+    parser.add_argument("--cache-dir", default=None, help="전처리 캐시 디렉토리 (지정 시 재실행 속도 개선)")
     args = parser.parse_args()
 
     cfg_dir = Path(args.config_dir)
@@ -249,9 +266,13 @@ def main():
         raise ValueError(f"{args.exp} 가 train.yaml experiments 에 없습니다.")
 
     data_root   = Path(args.data_root)
-    window_size = dataset_cfg["window"]["size"]
-    stride      = dataset_cfg["window"]["stride"]
-    batch_size  = train_cfg["training"]["batch_size"]
+    window_size   = dataset_cfg["window"]["size"]
+    stride        = dataset_cfg["window"]["stride"]
+    event_context = dataset_cfg["window"].get("event_context")   # None → full sliding
+    steady_stride = dataset_cfg["window"].get("steady_stride")   # None → stride × 20
+    batch_size  = (train_cfg["training"].get("batch_size_bert", 64)
+                   if args.model == "bert4nilm"
+                   else train_cfg["training"]["batch_size"])
     epochs      = train_cfg["training"]["epochs"]
     patience    = train_cfg["training"]["early_stopping_patience"]
     lr          = train_cfg["training"]["learning_rate"]
@@ -270,6 +291,7 @@ def main():
 
     from acquisition.preprocessor import PowerScaler
 
+    cache_dir = Path(args.cache_dir) if args.cache_dir else None
     ckpt_dir = _NILM_ROOT / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
     resume_exp = exp_cfg.get("resume_from")
@@ -285,26 +307,30 @@ def main():
     if prev_scaler is not None:
         base_train = NILMDataset(train_houses, data_root, window_size, stride,
                                  date_range=train_date_range, week=train_week,
-                                 scaler=prev_scaler)
+                                 scaler=prev_scaler, cache_dir=cache_dir,
+                                 event_context=event_context, steady_stride=steady_stride)
         base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
                                  date_range=eval_date_range,
-                                 scaler=prev_scaler)
+                                 scaler=prev_scaler, cache_dir=cache_dir,
+                                 event_context=event_context, steady_stride=steady_stride)
     else:
         base_train = NILMDataset(train_houses, data_root, window_size, stride,
                                  date_range=train_date_range, week=train_week,
-                                 fit_scaler=True)
+                                 fit_scaler=True, cache_dir=cache_dir,
+                                 event_context=event_context, steady_stride=steady_stride)
         base_val   = NILMDataset(val_houses,   data_root, window_size, stride,
                                  date_range=eval_date_range,
-                                 scaler=base_train.scaler)
+                                 scaler=base_train.scaler, cache_dir=cache_dir,
+                                 event_context=event_context, steady_stride=steady_stride)
 
     if args.model == "cnn_tda":
-        train_ds = _NILMDatasetWithTDA(base_train)
-        val_ds   = _NILMDatasetWithTDA(base_val)
+        train_ds = _NILMDatasetWithTDA(base_train, cache_dir=cache_dir)
+        val_ds   = _NILMDatasetWithTDA(base_val,   cache_dir=cache_dir)
     else:
         train_ds, val_ds = base_train, base_val
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=2, pin_memory=True)
-    val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=4, pin_memory=True)
+    val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
     print(f"[{args.exp}/{args.model}] train={len(train_ds):,}  val={len(val_ds):,} windows")
 
@@ -316,7 +342,7 @@ def main():
     if resume_exp:
         prev_ckpt = ckpt_dir / f"{resume_exp}_{args.model}.pt"
         if prev_ckpt.exists():
-            model.load_state_dict(torch.load(prev_ckpt, map_location=device))
+            model.load_state_dict(torch.load(prev_ckpt, map_location=device, weights_only=True))
             print(f"  └─ 모델 로드: {prev_ckpt.name}")
         else:
             print(f"  └─ 경고: {prev_ckpt.name} 없음 — 처음부터 학습")
@@ -344,6 +370,8 @@ def main():
             print(f"  MLflow 스킵: {e}")
 
     # ── 학습 루프 ────────────────────────────────────────────────────────────
+    amp_scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
+
     best_val_mae = float("inf")
     best_state   = None
     no_improve   = 0
@@ -352,7 +380,7 @@ def main():
 
     for epoch in range(1, epochs + 1):
         t_epoch = time.perf_counter()
-        train_loss = train_one_epoch(model, train_loader, optimizer, args.model, device)
+        train_loss = train_one_epoch(model, train_loader, optimizer, args.model, device, amp_scaler)
         epoch_times.append(time.perf_counter() - t_epoch)
 
         val_metrics = evaluate(model, val_loader, args.model, device)
@@ -364,7 +392,7 @@ def main():
         print(
             f"  epoch {epoch:3d}/{epochs}  "
             f"train_loss={train_loss:.4f}  "
-            f"val_mae={val_mae:.2f}W  r2={val_metrics['r2']:.4f}  "
+            f"val_mae={val_mae:.2f}  val_f1={val_metrics['f1']:.3f}  "
             f"lr={lr_now:.2e}  epoch_time={epoch_times[-1]:.1f}s"
         )
 
@@ -372,7 +400,7 @@ def main():
             import mlflow
             mlflow.log_metrics(
                 {"train_loss": train_loss, "val_mae": val_mae,
-                 "val_r2": val_metrics["r2"], "val_rmse": val_metrics["rmse"],
+                 "val_f1": val_metrics["f1"], "val_rmse": val_metrics["rmse"],
                  "epoch_time_s": epoch_times[-1]},
                 step=epoch,
             )
@@ -424,11 +452,11 @@ def main():
     if mlflow_run:
         import mlflow
         mlflow.log_metrics(
-            {"best_val_mae": final_metrics["mae"], "best_val_r2": final_metrics["r2"]}
+            {"best_val_mae": final_metrics["mae"], "best_val_f1": final_metrics["f1"]}
         )
         mlflow.end_run()
 
-    print(f"\n[완료] {args.exp}/{args.model}  MAE={final_metrics['mae']:.2f}W  RMSE={final_metrics['rmse']:.2f}W  SAE={final_metrics['sae']:.4f}  R²={final_metrics['r2']:.4f}")
+    print(f"\n[완료] {args.exp}/{args.model}  MAE={final_metrics['mae']:.4f}  RMSE={final_metrics['rmse']:.4f}  SAE={final_metrics['sae']:.4f}  F1={final_metrics['f1']:.3f}")
     return final_metrics
 
 
