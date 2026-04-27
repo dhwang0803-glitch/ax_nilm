@@ -1,0 +1,4 @@
+임베딩 방법,Precision@5,샘플 수
+통계피처,0.4,222
+SentenceTransformer,0.3811,222
+TS2Vec,0.0,0

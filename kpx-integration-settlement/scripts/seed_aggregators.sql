@@ -1,0 +1,4 @@
+-- DEPRECATED — 에너지캐시백으로 방향 전환으로 aggregator 개념 없음.
+-- 에너지캐시백은 KEPCO 직접 정산 구조이며 수요관리사업자 중개 불필요.
+--
+-- 신청 페이지: https://en-ter.co.kr/ec/apply/prsApply/select.do
