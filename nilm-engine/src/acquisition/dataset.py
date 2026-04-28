@@ -68,6 +68,26 @@ def _downsample_mask(mask: np.ndarray, factor: int) -> np.ndarray:
     return mask[:, :n].reshape(mask.shape[0], -1, factor).any(axis=2)
 
 
+def _log_on_window_counts(
+    window_index: list[tuple[int, int]],
+    segments: list,
+    window_size: int,
+) -> None:
+    """per-class ON 윈도우 수 출력. 100개 미만 채널에 ⚠️ 경고."""
+    seg_wins: dict[int, list[int]] = {}
+    for si, s in window_index:
+        seg_wins.setdefault(si, []).append(s)
+    on_win = np.zeros(N_APPLIANCES, dtype=int)
+    for si, starts in seg_wins.items():
+        _, _, oo, val = segments[si]
+        ctrs = np.clip(np.array(starts) + window_size // 2, 0, oo.shape[1] - 1)
+        on_win += (oo[:, ctrs] & val[:, None]).sum(axis=1)
+    print("  per-class ON 윈도우 (center 기준):")
+    for i, name in enumerate(APPLIANCE_LABELS):
+        flag = " ⚠️ <100" if on_win[i] < 100 else ""
+        print(f"    {name}: {on_win[i]:,}{flag}")
+
+
 def _compute_per_appliance_ctx(stride: int, sr: int = 30, cap: int = 30) -> dict[int, int]:
     """APPLIANCE_LABELING.gap_seconds → 가전별 event_context 윈도우 수.
 
@@ -341,19 +361,7 @@ class NILMDataset(Dataset):
                 f"  → 비율 1:{_ratio:.1f}\n"
                 f"  총 {len(self._window_index):,} windows"
             )
-            # per-class ON 윈도우 수 (리뷰 7번) — type2 등 희소 가전 100개 미만 모니터링
-            _seg_wins: dict[int, list[int]] = {}
-            for _si, _s in self._window_index:
-                _seg_wins.setdefault(_si, []).append(_s)
-            _on_win = np.zeros(N_APPLIANCES, dtype=int)
-            for _si, _starts in _seg_wins.items():
-                _, _, _oo, _val = self._segments[_si]
-                _ctrs = np.clip(np.array(_starts) + window_size // 2, 0, _oo.shape[1] - 1)
-                _on_win += (_oo[:, _ctrs] & _val[:, None]).sum(axis=1)
-            print("  per-class ON 윈도우 (center 기준):")
-            for _i, _name in enumerate(APPLIANCE_LABELS):
-                _flag = " ⚠️ <100" if _on_win[_i] < 100 else ""
-                print(f"    {_name}: {_on_win[_i]:,}{_flag}")
+            _log_on_window_counts(self._window_index, self._segments, window_size)
         else:
             print(f"[NILMDataset] full sliding  →  {len(self._window_index):,} windows")
 
