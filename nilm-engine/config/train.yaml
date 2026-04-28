@@ -1,11 +1,12 @@
 training:
   epochs: 15
-  batch_size: 32
+  batch_size: 256        # seq2point, cnn_tda 기본값
+  batch_size_bert: 64   # bert4nilm: window=1024 quadratic attention 메모리 제약
   learning_rate: 0.001
   early_stopping_patience: 5
   loss_weights:
-    mse: 1.0   # 전력 회귀 오차 가중치
-    bce: 0.5   # ON/OFF 분류 오차 가중치 (미사용 — 추후 확장용)
+    mse: 0.0001  # lambda_mse — raw W 타깃 기준 (MSE~40000W² → 4.0 수준으로 BCE와 균형)
+    bce: 1.0     # cnn_tda ON/OFF 분류 로짓 BCE 가중치
 
 optimizer:
   name: "adam"

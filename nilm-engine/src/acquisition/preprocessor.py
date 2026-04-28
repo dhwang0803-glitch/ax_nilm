@@ -30,6 +30,10 @@ class PowerScaler:
     def transform(self, series: np.ndarray) -> np.ndarray:
         return ((series - self.mean) / self.std).astype(np.float32)
 
+    def transform_target(self, series: np.ndarray) -> np.ndarray:
+        """가전 target: raw W 그대로 반환. BCE가 주 loss → target scale 정규화 불필요."""
+        return series.astype(np.float32)
+
     def inverse_transform(self, series: np.ndarray) -> np.ndarray:
         return (series * self.std + self.mean).astype(np.float32)
 
