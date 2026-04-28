@@ -206,6 +206,7 @@ class GCSNILMDataset(Dataset):
         steady_stride: int | None = None,
         resample_hz: int = 30,
         appliance_group: str | None = None,
+        denoise: bool = True,
     ):
         """
         event_context   : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
@@ -213,6 +214,7 @@ class GCSNILMDataset(Dataset):
         cache_dir       : house별 30Hz _segments를 npz로 캐시. window_index는 항상 재생성.
         resample_hz     : 다운샘플 목표 Hz (30 or 1). slow/always_on 그룹에는 1 권장.
         appliance_group : "fast" | "slow" | "always_on". 지정 시 해당 그룹 가전만 validity=True.
+        denoise         : True면 wavelet denoising 적용 (ablation 비교 시 False로 설정).
         """
         from datetime import timedelta
 
@@ -224,9 +226,9 @@ class GCSNILMDataset(Dataset):
             from acquisition.loader import build_active_mask
 
         try:
-            from .dataset import _event_window_starts, _downsample_block_avg, _downsample_mask
+            from .dataset import _event_window_starts, _downsample_block_avg, _downsample_mask, _compute_per_appliance_ctx
         except ImportError:
-            from acquisition.dataset import _event_window_starts, _downsample_block_avg, _downsample_mask
+            from acquisition.dataset import _event_window_starts, _downsample_block_avg, _downsample_mask, _compute_per_appliance_ctx
 
         from classifier.label_map import SPEED_GROUP
 
@@ -241,9 +243,9 @@ class GCSNILMDataset(Dataset):
             f"{sorted(houses)}|{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}|{resample_hz}".encode()
         ).hexdigest()[:12]
 
-        # 주차/기간 파라미터 해시 — house별 캐시 파일명에 사용
+        # 주차/기간 파라미터 해시 — house별 캐시 파일명에 사용 (denoise 포함해 캐시 오염 방지)
         _week_key = hashlib.md5(
-            f"{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}".encode()
+            f"{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}|{denoise}".encode()
         ).hexdigest()[:8]
 
         self._segments: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
@@ -319,7 +321,8 @@ class GCSNILMDataset(Dataset):
                         print(f"[GCSNILMDataset] {house_id}/{ch} 로드 실패: {e}")
 
                 agg_power = agg_df["active_power"].fillna(0).to_numpy(dtype=np.float32)
-                agg_power = _wavelet_denoise(agg_power)
+                if denoise:
+                    agg_power = _wavelet_denoise(agg_power)
 
                 if _hcache:
                     np.savez_compressed(
@@ -364,15 +367,16 @@ class GCSNILMDataset(Dataset):
 
         # ── 3단계: window_index 생성 (항상 재생성, 캐시 불필요) ───────────────
         _ss = steady_stride if steady_stride is not None else stride * 20
+        _per_app_ctx = _compute_per_appliance_ctx(stride, cap=event_context) if event_context is not None else None
         total_transitions = 0
         total_event_windows = 0
         total_steady_windows = 0
 
         for seg_idx, (agg, _, on_off, validity) in enumerate(self._segments):
             n_samples = len(agg)
-            if event_context is not None:
+            if _per_app_ctx is not None:
                 starts, n_trans, n_event, n_steady = _event_window_starts(
-                    on_off, validity, n_samples, window_size, stride, event_context, _ss
+                    on_off, validity, n_samples, window_size, stride, _per_app_ctx, _ss
                 )
                 total_transitions += n_trans
                 total_event_windows += n_event
@@ -383,14 +387,31 @@ class GCSNILMDataset(Dataset):
             for s in starts:
                 self._window_index.append((seg_idx, s))
 
-        if event_context is not None:
+        if _per_app_ctx is not None:
             _ratio = total_steady_windows / total_event_windows if total_event_windows > 0 else float("inf")
             print(
-                f"[GCSNILMDataset] event_context={event_context}  steady_stride={_ss}  전환점={total_transitions:,}\n"
+                f"[GCSNILMDataset] event_context=per-appliance(cap={event_context})  steady_stride={_ss}  전환점={total_transitions:,}\n"
                 f"  이벤트 윈도우={total_event_windows:,} / 정상 전용={total_steady_windows:,}"
                 f"  → 비율 1:{_ratio:.1f}\n"
                 f"  총 {len(self._window_index):,} windows"
             )
+            # per-class ON 윈도우 수 (리뷰 7번) — type2 등 희소 가전 100개 미만 모니터링
+            try:
+                from classifier.label_map import APPLIANCE_LABELS
+            except ImportError:
+                APPLIANCE_LABELS = [str(i) for i in range(N_APPLIANCES)]
+            _seg_wins: dict[int, list[int]] = {}
+            for _si, _s in self._window_index:
+                _seg_wins.setdefault(_si, []).append(_s)
+            _on_win = np.zeros(N_APPLIANCES, dtype=int)
+            for _si, _starts in _seg_wins.items():
+                _, _, _oo, _val = self._segments[_si]
+                _ctrs = np.clip(np.array(_starts) + window_size // 2, 0, _oo.shape[1] - 1)
+                _on_win += (_oo[:, _ctrs] & _val[:, None]).sum(axis=1)
+            print("  per-class ON 윈도우 (center 기준):")
+            for _i, _name in enumerate(APPLIANCE_LABELS):
+                _flag = " ⚠️ <100" if _on_win[_i] < 100 else ""
+                print(f"    {_name}: {_on_win[_i]:,}{_flag}")
         else:
             print(f"[GCSNILMDataset] full sliding  →  {len(self._window_index):,} windows")
 
