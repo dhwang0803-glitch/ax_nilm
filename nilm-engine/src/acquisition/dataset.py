@@ -16,7 +16,10 @@ from .loader import (
     load_channel_data,
 )
 from .preprocessor import PowerScaler
-from classifier.label_map import SPEED_GROUP, SPEED_GROUP_CONFIG
+from classifier.label_map import (
+    SPEED_GROUP, SPEED_GROUP_CONFIG,
+    APPLIANCE_LABELING, APPLIANCE_LABELS,
+)
 
 # 22종 가전 고정 인덱스 — config/dataset.yaml 순서와 동일하게 유지
 APPLIANCE_INDEX: dict[str, int] = {
@@ -65,13 +68,30 @@ def _downsample_mask(mask: np.ndarray, factor: int) -> np.ndarray:
     return mask[:, :n].reshape(mask.shape[0], -1, factor).any(axis=2)
 
 
+def _compute_per_appliance_ctx(stride: int, sr: int = 30, cap: int = 30) -> dict[int, int]:
+    """APPLIANCE_LABELING.gap_seconds → 가전별 event_context 윈도우 수.
+
+    gap_seconds → stride 단위 윈도우 수로 변환 후 cap으로 상한 제한.
+    Always-On 가전(냉장고 등, gap=None)은 최소값 3 적용.
+    """
+    stride_sec = stride / sr
+    ctx: dict[int, int] = {}
+    for i, name in enumerate(APPLIANCE_LABELS):
+        crit = APPLIANCE_LABELING.get(name)
+        if crit is None or crit["gap_seconds"] is None:
+            ctx[i] = 3
+        else:
+            ctx[i] = max(1, min(cap, round(crit["gap_seconds"] / stride_sec / 2)))
+    return ctx
+
+
 def _event_window_starts(
-    on_off_mask: np.ndarray,   # (N_APPLIANCES, n_samples) bool
-    validity: np.ndarray,       # (N_APPLIANCES,) bool
+    on_off_mask: np.ndarray,       # (N_APPLIANCES, n_samples) bool
+    validity: np.ndarray,           # (N_APPLIANCES,) bool
     n_samples: int,
     window_size: int,
     stride: int,
-    event_context: int,
+    event_context: dict[int, int],  # 가전별 ±N 윈도우
     steady_stride: int,
 ) -> tuple[list[int], int, int, int]:
     """
@@ -79,7 +99,7 @@ def _event_window_starts(
 
     반환:
         (sorted 시작 인덱스 목록, 검출된 전환점 수, 이벤트 윈도우 수, 정상 전용 윈도우 수)
-        이벤트 윈도우: 전환점 ±event_context 구간에서 생성된 윈도우
+        이벤트 윈도우: 전환점 ±event_context[app_idx] 구간에서 생성된 윈도우
         정상 전용 윈도우: steady_stride 샘플링 중 이벤트 윈도우와 겹치지 않는 것
     """
     event_starts: set[int] = set()
@@ -88,13 +108,14 @@ def _event_window_starts(
     for app_idx in range(on_off_mask.shape[0]):
         if not validity[app_idx]:
             continue
+        ctx = event_context.get(app_idx, 1)
         diff = np.diff(on_off_mask[app_idx].astype(np.int8), prepend=0)
         transition_idxs = np.where(diff != 0)[0]
         n_transitions += len(transition_idxs)
 
         for t in transition_idxs:
             center_start = int(t) - window_size // 2
-            for k in range(-event_context, event_context + 1):
+            for k in range(-ctx, ctx + 1):
                 s = center_start + k * stride
                 if 0 <= s <= n_samples - window_size:
                     event_starts.add(s)
@@ -292,15 +313,16 @@ class NILMDataset(Dataset):
 
         # ── 3단계: window_index 생성 (항상 재생성, 캐시 불필요) ───────────────
         _ss = steady_stride if steady_stride is not None else stride * 20
+        _per_app_ctx = _compute_per_appliance_ctx(stride, cap=event_context) if event_context is not None else None
         total_transitions = 0
         total_event_windows = 0
         total_steady_windows = 0
 
         for seg_idx, (agg, _, on_off, validity) in enumerate(self._segments):
             n_samples = len(agg)
-            if event_context is not None:
+            if _per_app_ctx is not None:
                 starts, n_trans, n_event, n_steady = _event_window_starts(
-                    on_off, validity, n_samples, window_size, stride, event_context, _ss
+                    on_off, validity, n_samples, window_size, stride, _per_app_ctx, _ss
                 )
                 total_transitions += n_trans
                 total_event_windows += n_event
@@ -311,10 +333,10 @@ class NILMDataset(Dataset):
             for s in starts:
                 self._window_index.append((seg_idx, s))
 
-        if event_context is not None:
+        if _per_app_ctx is not None:
             _ratio = total_steady_windows / total_event_windows if total_event_windows > 0 else float("inf")
             print(
-                f"[NILMDataset] event_context={event_context}  steady_stride={_ss}  전환점={total_transitions:,}\n"
+                f"[NILMDataset] event_context=per-appliance(cap={event_context})  steady_stride={_ss}  전환점={total_transitions:,}\n"
                 f"  이벤트 윈도우={total_event_windows:,} / 정상 전용={total_steady_windows:,}"
                 f"  → 비율 1:{_ratio:.1f}\n"
                 f"  총 {len(self._window_index):,} windows"

@@ -224,9 +224,9 @@ class GCSNILMDataset(Dataset):
             from acquisition.loader import build_active_mask
 
         try:
-            from .dataset import _event_window_starts, _downsample_block_avg, _downsample_mask
+            from .dataset import _event_window_starts, _downsample_block_avg, _downsample_mask, _compute_per_appliance_ctx
         except ImportError:
-            from acquisition.dataset import _event_window_starts, _downsample_block_avg, _downsample_mask
+            from acquisition.dataset import _event_window_starts, _downsample_block_avg, _downsample_mask, _compute_per_appliance_ctx
 
         from classifier.label_map import SPEED_GROUP
 
@@ -364,15 +364,16 @@ class GCSNILMDataset(Dataset):
 
         # ── 3단계: window_index 생성 (항상 재생성, 캐시 불필요) ───────────────
         _ss = steady_stride if steady_stride is not None else stride * 20
+        _per_app_ctx = _compute_per_appliance_ctx(stride, cap=event_context) if event_context is not None else None
         total_transitions = 0
         total_event_windows = 0
         total_steady_windows = 0
 
         for seg_idx, (agg, _, on_off, validity) in enumerate(self._segments):
             n_samples = len(agg)
-            if event_context is not None:
+            if _per_app_ctx is not None:
                 starts, n_trans, n_event, n_steady = _event_window_starts(
-                    on_off, validity, n_samples, window_size, stride, event_context, _ss
+                    on_off, validity, n_samples, window_size, stride, _per_app_ctx, _ss
                 )
                 total_transitions += n_trans
                 total_event_windows += n_event
@@ -383,10 +384,10 @@ class GCSNILMDataset(Dataset):
             for s in starts:
                 self._window_index.append((seg_idx, s))
 
-        if event_context is not None:
+        if _per_app_ctx is not None:
             _ratio = total_steady_windows / total_event_windows if total_event_windows > 0 else float("inf")
             print(
-                f"[GCSNILMDataset] event_context={event_context}  steady_stride={_ss}  전환점={total_transitions:,}\n"
+                f"[GCSNILMDataset] event_context=per-appliance(cap={event_context})  steady_stride={_ss}  전환점={total_transitions:,}\n"
                 f"  이벤트 윈도우={total_event_windows:,} / 정상 전용={total_steady_windows:,}"
                 f"  → 비율 1:{_ratio:.1f}\n"
                 f"  총 {len(self._window_index):,} windows"
