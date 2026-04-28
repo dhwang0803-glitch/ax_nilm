@@ -1,5 +1,0 @@
-아키텍처,MAE,std,샘플수
-Hybrid,0.6576,0.8739,122
-Hybrid+LLM,0.6795,0.865,122
-Prediction only,0.7694,0.9324,122
-Rule only,0.6373,0.8889,122
