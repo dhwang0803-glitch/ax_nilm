@@ -17,12 +17,12 @@ from dataclasses import dataclass, field
 from datetime import date
 
 
-# 절감률 구간별 단가 (오름차순 — (최소 절감률, 단가))
+# 절감률 구간별 단가 (오름차순 — (최소 절감률, 단가)) — KEPCO 2024년 1월분 기준
 _CASHBACK_TIERS: list[tuple[float, float]] = [
     (0.20, 100.0),
-    (0.10, 70.0),
-    (0.05, 50.0),
-    (0.03, 30.0),
+    (0.10,  80.0),
+    (0.05,  60.0),
+    (0.03,  30.0),
 ]
 _MIN_SAVINGS_RATE = 0.03   # 3% 미만 미지급
 _MAX_SAVINGS_RATE = 0.30   # 30% 초과분 미인정
@@ -77,6 +77,21 @@ class CashbackResult:
     @property
     def has_nilm_overestimate(self) -> bool:
         return self.untracked_savings_kwh < 0
+
+    def appliance_cashback_contributions(self) -> list[tuple[str, float, int]]:
+        """가전별 캐시백 기여분 목록 (절감량 내림차순).
+
+        단가는 가구 전체 절감률로 결정되므로 모든 가전에 동일 단가 적용.
+
+        Returns:
+            [(appliance_code, savings_kwh, cashback_krw), ...]
+        """
+        result = []
+        for a in self.appliance_savings:
+            if a.savings_kwh > 0:
+                contrib_krw = int(a.savings_kwh * self.cashback_rate)
+                result.append((a.appliance_code, round(a.savings_kwh, 3), contrib_krw))
+        return sorted(result, key=lambda x: x[2], reverse=True)
 
 
 def calc_cashback(
