@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,10 @@ from .loader import (
     load_channel_data,
 )
 from .preprocessor import PowerScaler
+from classifier.label_map import (
+    SPEED_GROUP, SPEED_GROUP_CONFIG,
+    APPLIANCE_LABELING, APPLIANCE_LABELS,
+)
 
 # 22종 가전 고정 인덱스 — config/dataset.yaml 순서와 동일하게 유지
 APPLIANCE_INDEX: dict[str, int] = {
@@ -44,6 +49,86 @@ APPLIANCE_INDEX: dict[str, int] = {
 N_APPLIANCES = len(APPLIANCE_INDEX)  # 22
 
 
+def _downsample_block_avg(arr: np.ndarray, factor: int) -> np.ndarray:
+    """1D 또는 2D(N_apps, samples) 배열을 block 평균으로 다운샘플."""
+    if factor == 1:
+        return arr
+    if arr.ndim == 1:
+        n = (len(arr) // factor) * factor
+        return arr[:n].reshape(-1, factor).mean(axis=1).astype(arr.dtype)
+    n = (arr.shape[1] // factor) * factor
+    return arr[:, :n].reshape(arr.shape[0], -1, factor).mean(axis=2).astype(arr.dtype)
+
+
+def _downsample_mask(mask: np.ndarray, factor: int) -> np.ndarray:
+    """bool ON/OFF 마스크를 block 다운샘플 — 블록 내 any True면 True."""
+    if factor == 1:
+        return mask
+    n = (mask.shape[1] // factor) * factor
+    return mask[:, :n].reshape(mask.shape[0], -1, factor).any(axis=2)
+
+
+def _compute_per_appliance_ctx(stride: int, sr: int = 30, cap: int = 30) -> dict[int, int]:
+    """APPLIANCE_LABELING.gap_seconds → 가전별 event_context 윈도우 수.
+
+    gap_seconds → stride 단위 윈도우 수로 변환 후 cap으로 상한 제한.
+    Always-On 가전(냉장고 등, gap=None)은 최소값 3 적용.
+    """
+    stride_sec = stride / sr
+    ctx: dict[int, int] = {}
+    for i, name in enumerate(APPLIANCE_LABELS):
+        crit = APPLIANCE_LABELING.get(name)
+        if crit is None or crit["gap_seconds"] is None:
+            ctx[i] = 3
+        else:
+            ctx[i] = max(1, min(cap, round(crit["gap_seconds"] / stride_sec / 2)))
+    return ctx
+
+
+def _event_window_starts(
+    on_off_mask: np.ndarray,       # (N_APPLIANCES, n_samples) bool
+    validity: np.ndarray,           # (N_APPLIANCES,) bool
+    n_samples: int,
+    window_size: int,
+    stride: int,
+    event_context: dict[int, int],  # 가전별 ±N 윈도우
+    steady_stride: int,
+) -> tuple[list[int], int, int, int]:
+    """
+    이벤트 기반 윈도우 시작 인덱스를 반환한다.
+
+    반환:
+        (sorted 시작 인덱스 목록, 검출된 전환점 수, 이벤트 윈도우 수, 정상 전용 윈도우 수)
+        이벤트 윈도우: 전환점 ±event_context[app_idx] 구간에서 생성된 윈도우
+        정상 전용 윈도우: steady_stride 샘플링 중 이벤트 윈도우와 겹치지 않는 것
+    """
+    event_starts: set[int] = set()
+    n_transitions = 0
+
+    for app_idx in range(on_off_mask.shape[0]):
+        if not validity[app_idx]:
+            continue
+        ctx = event_context.get(app_idx, 1)
+        diff = np.diff(on_off_mask[app_idx].astype(np.int8), prepend=0)
+        transition_idxs = np.where(diff != 0)[0]
+        n_transitions += len(transition_idxs)
+
+        for t in transition_idxs:
+            center_start = int(t) - window_size // 2
+            for k in range(-ctx, ctx + 1):
+                s = center_start + k * stride
+                if 0 <= s <= n_samples - window_size:
+                    event_starts.add(s)
+
+    # 정상 구간 희소 커버리지 (냉장고 등 상시 ON 가전 과소표집 방지)
+    steady_starts: set[int] = set()
+    for s in range(0, n_samples - window_size + 1, steady_stride):
+        steady_starts.add(s)
+
+    n_steady_only = len(steady_starts - event_starts)
+    return sorted(event_starts | steady_starts), n_transitions, len(event_starts), n_steady_only
+
+
 class NILMDataset(Dataset):
     """
     Multi-output 슬라이딩 윈도우 NILM 데이터셋.
@@ -60,6 +145,8 @@ class NILMDataset(Dataset):
         ds = NILMDataset(
             houses=["house_067", "house_004"],
             data_root="/path/to/data",
+            event_context=20,   # 전환점 ±20 윈도우 (≈ ±20초)
+            steady_stride=600,  # 정상 구간 20초마다 1개
         )
         agg, target, on_off, validity = ds[0]
         # agg.shape      → (1024,)
@@ -78,13 +165,22 @@ class NILMDataset(Dataset):
         week: int | None = None,
         scaler: PowerScaler | None = None,
         fit_scaler: bool = False,
+        cache_dir: str | Path | None = None,
+        event_context: int | None = None,
+        steady_stride: int | None = None,
+        resample_hz: int = 30,
+        appliance_group: str | None = None,
     ):
         """
-        week       : 1-based 주차 번호. 각 house의 시작일 기준으로 7일 구간을 자동 계산.
-        date_range : ("YYYY-MM-DD", "YYYY-MM-DD") — week 미지정 시 사용.
-        scaler     : 외부에서 fit된 PowerScaler. 제공 시 바로 적용.
-        fit_scaler : True면 이 dataset의 aggregate 전력값으로 scaler를 새로 fit.
-                     train dataset 생성 시 True, test dataset은 train.scaler를 전달.
+        week           : 1-based 주차 번호. 각 house의 시작일 기준으로 7일 구간을 자동 계산.
+        date_range     : ("YYYY-MM-DD", "YYYY-MM-DD") — week 미지정 시 사용.
+        scaler         : 외부에서 fit된 PowerScaler. 제공 시 바로 적용.
+        fit_scaler     : True면 이 dataset의 aggregate 전력값으로 scaler를 새로 fit.
+        cache_dir      : 지정 시 _segments(raw numpy)를 npz로 캐시. window_index는 항상 재생성.
+        event_context  : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
+        steady_stride  : 정상 구간 커버리지 stride. None이면 stride × 20 자동 설정.
+        resample_hz    : 다운샘플 목표 Hz (30 or 1). slow/always_on 그룹에는 1 권장.
+        appliance_group: "fast" | "slow" | "always_on". 지정 시 해당 그룹 가전만 validity=True.
         """
         from datetime import timedelta
 
@@ -94,73 +190,98 @@ class NILMDataset(Dataset):
 
         data_root = Path(data_root)
 
-        # 세그먼트: (agg_power, target_power, on_off, validity) 배열
-        self._segments: list[
-            tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-        ] = []
-        self._window_index: list[tuple[int, int]] = []  # (seg_idx, start)
-        _all_agg: list[np.ndarray] = []  # fit_scaler용 aggregate 수집
+        # 캐시 키: 샘플링 파라미터(event_context, steady_stride)는 제외 — window_index는 항상 재생성
+        _key = hashlib.md5(
+            f"{sorted(houses)}|{date_range}|{week}|{window_size}|{stride}|{resample_hz}".encode()
+        ).hexdigest()[:12]
+        self.cache_key = _key
+        _cache_path = Path(cache_dir) / f"nilm_{_key}.npz" if cache_dir else None
 
-        for house_id in houses:
-            channels = find_house_channels(data_root, house_id)
-            if "ch01" not in channels:
-                print(f"[NILMDataset] {house_id}: ch01 없음 — 스킵")
-                continue
+        self._segments: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
+        self._window_index: list[tuple[int, int]] = []
+        _all_agg: list[np.ndarray] = []
 
-            # house별 날짜 범위 결정
-            if week is not None:
-                start_date = get_house_start_date(data_root, house_id)
-                dr: tuple[str, str] | None = (
-                    (start_date + timedelta(days=(week - 1) * 7)).isoformat(),
-                    (start_date + timedelta(days=week * 7 - 1)).isoformat(),
-                )
-            else:
-                dr = date_range
-
-            agg_df = load_channel_data(data_root, house_id, "ch01", dr)
-            timestamps = agg_df["date_time"]
-            n_samples = len(agg_df)
-
-            # (22, n_samples) 출력 배열 초기화
-            target_power = np.zeros((N_APPLIANCES, n_samples), dtype=np.float32)
-            on_off_mask = np.zeros((N_APPLIANCES, n_samples), dtype=bool)
-            validity = np.zeros(N_APPLIANCES, dtype=bool)
-
-            for ch in channels:
-                if ch == "ch01":
+        # ── 1단계: _segments 로드 (캐시 우선) ────────────────────────────────
+        if _cache_path and _cache_path.exists():
+            _d = np.load(str(_cache_path))
+            n_seg = int(_d["n_segments"])
+            self._segments = [
+                (_d[f"agg_{i}"], _d[f"target_{i}"], _d[f"on_off_{i}"], _d[f"validity_{i}"])
+                for i in range(n_seg)
+            ]
+            if fit_scaler:
+                _all_agg = [seg[0] for seg in self._segments]
+            print(f"[NILMDataset] 캐시 로드: {_cache_path.name}")
+        else:
+            for house_id in houses:
+                channels = find_house_channels(data_root, house_id)
+                if "ch01" not in channels:
+                    print(f"[NILMDataset] {house_id}: ch01 없음 — 스킵")
                     continue
 
-                name = get_appliance_name(data_root, house_id, ch)
-                if name not in APPLIANCE_INDEX:
-                    continue  # 22종 외 기타 채널 무시
+                if week is not None:
+                    start_date = get_house_start_date(data_root, house_id)
+                    dr: tuple[str, str] | None = (
+                        (start_date + timedelta(days=(week - 1) * 7)).isoformat(),
+                        (start_date + timedelta(days=week * 7 - 1)).isoformat(),
+                    )
+                else:
+                    dr = date_range
 
-                idx = APPLIANCE_INDEX[name]
+                agg_df = load_channel_data(data_root, house_id, "ch01", dr)
+                timestamps = agg_df["date_time"]
+                n_samples = len(agg_df)
 
-                tgt_df = load_channel_data(data_root, house_id, ch, dr)
+                target_power = np.zeros((N_APPLIANCES, n_samples), dtype=np.float32)
+                on_off_mask = np.zeros((N_APPLIANCES, n_samples), dtype=bool)
+                validity = np.zeros(N_APPLIANCES, dtype=bool)
 
-                # timestamp 기준 정렬 후 aggregate와 길이 맞춤
-                merged = agg_df[["date_time"]].merge(
-                    tgt_df[["date_time", "active_power"]],
-                    on="date_time",
-                    how="left",
-                )
-                power_values = merged["active_power"].fillna(0).to_numpy(dtype=np.float32)
-                target_power[idx] = power_values
+                for ch in channels:
+                    if ch == "ch01":
+                        continue
 
-                tgt_labels = load_all_labels(data_root, house_id, ch, dr)
-                on_off_mask[idx] = build_active_mask(tgt_labels, timestamps)
-                validity[idx] = True
+                    name = get_appliance_name(data_root, house_id, ch)
+                    if name not in APPLIANCE_INDEX:
+                        continue
 
-            agg_power = agg_df["active_power"].to_numpy(dtype=np.float32)
-            if fit_scaler:
-                _all_agg.append(agg_power)
-            seg_idx = len(self._segments)
-            self._segments.append((agg_power, target_power, on_off_mask, validity))
+                    idx = APPLIANCE_INDEX[name]
 
-            for start in range(0, n_samples - window_size + 1, stride):
-                self._window_index.append((seg_idx, start))
+                    tgt_df = load_channel_data(data_root, house_id, ch, dr)
 
-        # scaler fit 후 전체 세그먼트에 적용
+                    merged = agg_df[["date_time"]].merge(
+                        tgt_df[["date_time", "active_power"]],
+                        on="date_time",
+                        how="left",
+                    )
+                    power_values = merged["active_power"].fillna(0).to_numpy(dtype=np.float32)
+                    target_power[idx] = power_values
+
+                    tgt_labels = load_all_labels(data_root, house_id, ch, dr)
+                    on_off_mask[idx] = build_active_mask(tgt_labels, timestamps)
+                    validity[idx] = True
+
+                agg_power = agg_df["active_power"].to_numpy(dtype=np.float32)
+                if resample_hz < 30:
+                    _factor = 30 // resample_hz
+                    agg_power    = _downsample_block_avg(agg_power,    _factor)
+                    target_power = _downsample_block_avg(target_power, _factor)
+                    on_off_mask  = _downsample_mask(on_off_mask,       _factor)
+                if fit_scaler:
+                    _all_agg.append(agg_power)
+                self._segments.append((agg_power, target_power, on_off_mask, validity))
+
+            if _cache_path:
+                Path(cache_dir).mkdir(parents=True, exist_ok=True)
+                _save: dict = {"n_segments": np.array(len(self._segments))}
+                for i, (agg, tgt, on_off, val) in enumerate(self._segments):
+                    _save[f"agg_{i}"] = agg
+                    _save[f"target_{i}"] = tgt
+                    _save[f"on_off_{i}"] = on_off
+                    _save[f"validity_{i}"] = val
+                np.savez_compressed(str(_cache_path), **_save)
+                print(f"[NILMDataset] 캐시 저장: {_cache_path.name}")
+
+        # ── 2단계: scaler fit & 적용 ──────────────────────────────────────────
         if fit_scaler and _all_agg:
             self.scaler = PowerScaler().fit(np.concatenate(_all_agg))
 
@@ -168,12 +289,73 @@ class NILMDataset(Dataset):
             self._segments = [
                 (
                     self.scaler.transform(agg),
-                    self.scaler.transform(tgt),
+                    self.scaler.transform_target(tgt),
                     on_off,
                     validity,
                 )
                 for agg, tgt, on_off, validity in self._segments
             ]
+
+        # ── 2.5단계: appliance_group 필터 — 해당 그룹 외 가전 validity=False ──
+        if appliance_group is not None:
+            _group_names = {n for n, g in SPEED_GROUP.items() if g == appliance_group}
+            filtered = []
+            for agg, tgt, on_off, val in self._segments:
+                new_val = val.copy()
+                for name, idx in APPLIANCE_INDEX.items():
+                    if name not in _group_names:
+                        new_val[idx] = False
+                filtered.append((agg, tgt, on_off, new_val))
+            self._segments = filtered
+
+        self.resample_hz = resample_hz
+        self.appliance_group = appliance_group
+
+        # ── 3단계: window_index 생성 (항상 재생성, 캐시 불필요) ───────────────
+        _ss = steady_stride if steady_stride is not None else stride * 20
+        _per_app_ctx = _compute_per_appliance_ctx(stride, cap=event_context) if event_context is not None else None
+        total_transitions = 0
+        total_event_windows = 0
+        total_steady_windows = 0
+
+        for seg_idx, (agg, _, on_off, validity) in enumerate(self._segments):
+            n_samples = len(agg)
+            if _per_app_ctx is not None:
+                starts, n_trans, n_event, n_steady = _event_window_starts(
+                    on_off, validity, n_samples, window_size, stride, _per_app_ctx, _ss
+                )
+                total_transitions += n_trans
+                total_event_windows += n_event
+                total_steady_windows += n_steady
+            else:
+                starts = range(0, n_samples - window_size + 1, stride)
+
+            for s in starts:
+                self._window_index.append((seg_idx, s))
+
+        if _per_app_ctx is not None:
+            _ratio = total_steady_windows / total_event_windows if total_event_windows > 0 else float("inf")
+            print(
+                f"[NILMDataset] event_context=per-appliance(cap={event_context})  steady_stride={_ss}  전환점={total_transitions:,}\n"
+                f"  이벤트 윈도우={total_event_windows:,} / 정상 전용={total_steady_windows:,}"
+                f"  → 비율 1:{_ratio:.1f}\n"
+                f"  총 {len(self._window_index):,} windows"
+            )
+            # per-class ON 윈도우 수 (리뷰 7번) — type2 등 희소 가전 100개 미만 모니터링
+            _seg_wins: dict[int, list[int]] = {}
+            for _si, _s in self._window_index:
+                _seg_wins.setdefault(_si, []).append(_s)
+            _on_win = np.zeros(N_APPLIANCES, dtype=int)
+            for _si, _starts in _seg_wins.items():
+                _, _, _oo, _val = self._segments[_si]
+                _ctrs = np.clip(np.array(_starts) + window_size // 2, 0, _oo.shape[1] - 1)
+                _on_win += (_oo[:, _ctrs] & _val[:, None]).sum(axis=1)
+            print("  per-class ON 윈도우 (center 기준):")
+            for _i, _name in enumerate(APPLIANCE_LABELS):
+                _flag = " ⚠️ <100" if _on_win[_i] < 100 else ""
+                print(f"    {_name}: {_on_win[_i]:,}{_flag}")
+        else:
+            print(f"[NILMDataset] full sliding  →  {len(self._window_index):,} windows")
 
     def __len__(self) -> int:
         return len(self._window_index)

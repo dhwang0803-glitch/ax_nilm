@@ -11,7 +11,7 @@ GUDHI 없으면 H1 부분은 0으로 채운다.
 
 import numpy as np
 
-TDA_DIM = 20  # 고정 출력 차원: H0(8) + H1(8) + signal_stats(4)
+TDA_DIM = 22  # 고정 출력 차원: H0(8) + H1(8) + signal_stats(4) + magnitude(2)
 
 
 def compute_tda_features(signal: np.ndarray, n_subsample: int = 64) -> np.ndarray:
@@ -42,12 +42,17 @@ def compute_tda_features(signal: np.ndarray, n_subsample: int = 64) -> np.ndarra
 
     # zero-crossing rate: 신호가 평균선을 넘는 횟수 (가전 동작 패턴 구분)
     zcr = float(np.sum(np.diff(np.sign(signal - signal.mean())) != 0))
+    # log-scale magnitude: 절대 전력 수준 보존 (0~1 정규화로 소실되는 정보 복원)
+    log_mean = float(np.log10(signal.mean() + 1.0))
+    log_max  = float(np.log10(signal.max()  + 1.0))
     sig_feat = np.array([
         signal.mean(),
         signal.std(),
         float(signal.max() - signal.min()),
         zcr,
-    ], dtype=np.float32)  # 4 features
+        log_mean,
+        log_max,
+    ], dtype=np.float32)  # 6 features
 
     feat = np.concatenate([h0_feat, h1_feat, sig_feat])
     return feat[:TDA_DIM].astype(np.float32)

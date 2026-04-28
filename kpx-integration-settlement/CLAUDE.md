@@ -6,9 +6,22 @@
 ## 이 브랜치에서 작업 시작 체크리스트
 
 1. `config/.env.example`을 복사해 `config/.env` 생성 후 실제 값 입력
-2. `pip install openai sentence-transformers celery redis xgboost`
-3. Redis 실행 확인: `redis-cli ping`
-4. 벤치마크 실행: `python -m benchmark.run_benchmark --cbl`
+2. `pip install openai celery redis xgboost`
+3. `OPENAI_API_KEY` 환경변수 확인
+4. 도구 smoke test: `python -c "from src.agent.data_tools import get_household_profile; print(get_household_profile('HH001')['summary'])"`
+5. 코치 에이전트 실행: `python -c "from src.agent.coach import run_coach; print(run_coach('HH001', '이번 주 전기료 줄이려면?'))"`
+
+## 아키텍처 (Tool-use 패턴, 2026-04-28~)
+
+임베딩 기반 접근 → Tool-use 패턴으로 전환 ([설계 근거](plans/agent_tool_design.md)).
+
+| 파일 | 역할 |
+|------|------|
+| `src/agent/data_tools.py` | 8개 데이터 조회 도구 + mock 데이터 (3가구) + TOOL_SCHEMAS |
+| `src/agent/coach.py` | 코치 Agent loop (baseline 컨텍스트 주입 + function calling) |
+| `tests/test_data_tools.py` | 8개 도구 schema 검증 단위 테스트 |
+
+**mock → 실데이터 연결 예정**: 4주차에 DB·NILM·KMA·KEPCO API 연결.
 
 ## 파일 생성 금지 위치
 
