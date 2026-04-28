@@ -43,8 +43,8 @@ def compute_tda_features(signal: np.ndarray, n_subsample: int = 64) -> np.ndarra
     # zero-crossing rate: 신호가 평균선을 넘는 횟수 (가전 동작 패턴 구분)
     zcr = float(np.sum(np.diff(np.sign(signal - signal.mean())) != 0))
     # log-scale magnitude: 절대 전력 수준 보존 (0~1 정규화로 소실되는 정보 복원)
-    log_mean = float(np.log10(signal.mean() + 1.0))
-    log_max  = float(np.log10(signal.max()  + 1.0))
+    log_mean = float(np.log10(max(float(signal.mean()) + 1.0, 1e-6)))
+    log_max  = float(np.log10(max(float(signal.max())  + 1.0, 1e-6)))
     sig_feat = np.array([
         signal.mean(),
         signal.std(),
