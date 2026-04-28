@@ -240,7 +240,7 @@ class GCSNILMDataset(Dataset):
 
         # cache_key: TDA 캐시 파일명 등 외부에서 참조용 (전체 파라미터 해시)
         self.cache_key = hashlib.md5(
-            f"{sorted(houses)}|{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}|{resample_hz}".encode()
+            f"{sorted(houses)}|{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}|{resample_hz}|{denoise}".encode()
         ).hexdigest()[:12]
 
         # 주차/기간 파라미터 해시 — house별 캐시 파일명에 사용
