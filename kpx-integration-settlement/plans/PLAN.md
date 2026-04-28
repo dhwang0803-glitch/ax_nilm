@@ -192,19 +192,12 @@ kpx-integration-settlement/
 ├── plans/
 │   └── PLAN.md
 ├── src/
-│   ├── settlement/
-│   │   ├── cbl.py          # 기준선 계산 (2개년 동월 평균)
-│   │   ├── calculator.py   # 캐시백 산정 (절감률 → 단가 → 금액)
-│   │   └── appliance.py    # 가전별 절감 기여 분석
-│   ├── rag/
-│   │   ├── embedder.py     # 전력 패턴 임베딩
-│   │   └── retriever.py    # pgvector 유사 달 검색
-│   ├── agent/
-│   │   ├── tools.py        # LLM 도구 정의
-│   │   └── recommender.py  # LLM Agent 실행
-│   └── tasks/
-│       └── batch_compute.py  # Celery 월별 배치
+│   └── settlement/
+│       ├── cbl.py          # 기준선 계산 (2개년 동월 평균)
+│       ├── calculator.py   # 캐시백 산정 (절감률 → 단가 → 금액)
+│       └── appliance.py    # 가전별 절감 기여 분석
 ├── benchmark/
+│   └── colab_embedding_compare2.ipynb  # RAG 파이프라인 + LLM Agent (GPU 환경, Colab)
 ├── tests/
 ├── config/
 │   └── .env.example
@@ -212,6 +205,8 @@ kpx-integration-settlement/
 ```
 
 > ~~src/kpx/~~ — KPX 연동 제거 (에너지캐시백은 KEPCO 직접, API 없음)
+> ~~src/rag/, src/agent/~~ — Colab 노트북으로 이전 (GPU 환경에서 임베딩·LLM 실행)
+> ~~src/tasks/~~ — Celery 배치 미구현 상태, 노트북 평가 우선
 
 ---
 
