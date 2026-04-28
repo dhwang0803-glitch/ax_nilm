@@ -16,10 +16,10 @@ from openai import OpenAI
 from .anonymizer import scrub_tool_output, validate_no_pii
 from .data_tools import (
     TOOL_SCHEMAS,
+    get_cashback_history,
     get_consumption_breakdown,
     get_consumption_hourly,
     get_consumption_summary,
-    get_dr_events,
     get_forecast,
     get_household_profile,
     get_tariff_info,
@@ -43,7 +43,7 @@ _SYSTEM_PROMPT = """# 퍼르소나
 - get_consumption_summary(household_id, period): 전력 소비 요약
 - get_consumption_hourly(household_id, date): 시간대별 소비
 - get_consumption_breakdown(household_id, date): 가전별 NILM 분해
-- get_dr_events(date_range, region): DR 이벤트
+- get_cashback_history(household_id, date_range): 에너지캐시백 절감 실적·지급 내역
 - get_tariff_info(household_id): 요금제
 
 # 원칙
@@ -90,8 +90,8 @@ def _dispatch_tool(name: str, inputs: dict[str, Any]) -> dict[str, Any]:
         return get_consumption_hourly(inputs["household_id"], inputs.get("date", "2026-04-27"))
     if name == "get_consumption_breakdown":
         return get_consumption_breakdown(inputs["household_id"], inputs.get("date", "2026-04-27"))
-    if name == "get_dr_events":
-        return get_dr_events(inputs["date_range"], inputs.get("region", "서울"))
+    if name == "get_cashback_history":
+        return get_cashback_history(inputs["household_id"], inputs.get("date_range"))
     if name == "get_tariff_info":
         return get_tariff_info(inputs["household_id"])
     return {"error": f"알 수 없는 도구: {name}", "code": "E_UNKNOWN_TOOL"}

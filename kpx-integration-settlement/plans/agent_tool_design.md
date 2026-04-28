@@ -167,8 +167,28 @@ NILM 분해 결과 → 가전별 사용량.
 ### 2.4 외부 컨텍스트
 
 ```python
-get_dr_events(date_range: tuple[str, str], region: str) -> dict
-"""DR 이벤트 발령 이력. KPX/KEPCO API 연계."""
+get_cashback_history(household_id: str, date_range: tuple[str, str] | None = None) -> dict
+"""
+에너지캐시백 월별 절감 실적·지급 내역. KEPCO 주택용 에너지캐시백 프로그램.
+직전 2개년 동월 평균 대비 3% 이상 절감 시 30~100원/kWh 지급.
+반환:
+  {
+    "summary": "캐시백 이력 3개월: 지급완료 2개월, 누적 절감 49.5kWh, 누적 캐시백 4,950원",
+    "raw": [
+      {
+        "month": "2026-03",
+        "baseline_kwh": 310.2,
+        "actual_kwh": 295.8,
+        "savings_pct": 4.6,
+        "savings_kwh": 14.4,
+        "cashback_krw": 1440,
+        "cashback_rate_krw_per_kwh": 100,
+        "status": "지급완료"
+      },
+      ...
+    ]
+  }
+"""
 
 get_tariff_info(household_id: str) -> dict
 """현재 요금제 + 누진 단계 + 다음 단계까지 남은 kWh."""
@@ -215,7 +235,7 @@ get_similar_households(household_id: str, k: int = 5) -> dict
 - get_consumption_summary(id, period): 전력 소비 요약
 - get_consumption_hourly(id, date): 시간대별 소비
 - get_consumption_breakdown(id, date): 가전별 NILM 분해
-- get_dr_events(range, region): DR 이벤트
+- get_cashback_history(id, range): 에너지캐시백 절감 실적·지급 내역
 - get_tariff_info(id): 요금제
 
 # 원칙
@@ -251,7 +271,8 @@ JSON: {"recommendations": [...], "reasoning": "...", "data_used": [...]}
 |------|--------------|
 | "이번 달 전기 비싼?" | breakdown → weather → answer |
 | "어제 뭐가 많이 켜졌어?" | breakdown(yesterday) → answer |
-| "내일 DR 신청 가능?" | dr_events(tomorrow) → forecast → answer |
+| "캐시백 얼마나 받았어?" | cashback_history(HH) → tariff_info → answer |
+| "이번 달 캐시백 받을 수 있을까?" | cashback_history(HH) → consumption_summary → answer |
 
 평가 지표:
 - **Tool precision/recall**: 호출한 도구 / 골든 도구 일치도

@@ -220,39 +220,103 @@ _MOCK_BREAKDOWN: dict[str, list[dict]] = {
     ],
 }
 
-_MOCK_DR_EVENTS: dict[str, list[dict]] = {
-    "서울": [
+_MOCK_CASHBACK_HISTORY: dict[str, list[dict]] = {
+    "HH001": [
         {
-            "event_id": "DR-2026-042-001",
-            "date": "2026-04-22",
-            "start_time": "14:00",
-            "end_time": "16:00",
-            "type": "감축요청",
-            "target_reduction_pct": 15,
-            "incentive_krw_per_kwh": 800,
-            "status": "완료",
+            "month": "2026-02",
+            "baseline_kwh": 318.5,
+            "actual_kwh": 285.2,
+            "savings_pct": 10.5,
+            "savings_kwh": 33.3,
+            "cashback_krw": 3330,
+            "cashback_rate_krw_per_kwh": 100,
+            "status": "지급완료",
         },
         {
-            "event_id": "DR-2026-042-002",
-            "date": "2026-04-27",
-            "start_time": "18:00",
-            "end_time": "20:00",
-            "type": "감축요청",
-            "target_reduction_pct": 20,
-            "incentive_krw_per_kwh": 1000,
-            "status": "완료",
+            "month": "2026-03",
+            "baseline_kwh": 310.2,
+            "actual_kwh": 295.8,
+            "savings_pct": 4.6,
+            "savings_kwh": 14.4,
+            "cashback_krw": 1440,
+            "cashback_rate_krw_per_kwh": 100,
+            "status": "지급완료",
         },
         {
-            "event_id": "DR-2026-042-003",
-            "date": "2026-04-29",
-            "start_time": "13:00",
-            "end_time": "15:00",
-            "type": "감축요청",
-            "target_reduction_pct": 15,
-            "incentive_krw_per_kwh": 800,
-            "status": "예정",
+            "month": "2026-04",
+            "baseline_kwh": 298.0,
+            "actual_kwh": None,
+            "savings_pct": None,
+            "savings_kwh": None,
+            "cashback_krw": None,
+            "cashback_rate_krw_per_kwh": None,
+            "status": "집계중",
         },
-    ]
+    ],
+    "HH002": [
+        {
+            "month": "2026-02",
+            "baseline_kwh": 152.3,
+            "actual_kwh": 148.1,
+            "savings_pct": 2.8,
+            "savings_kwh": 4.2,
+            "cashback_krw": 0,
+            "cashback_rate_krw_per_kwh": 0,
+            "status": "미달(3% 미만)",
+        },
+        {
+            "month": "2026-03",
+            "baseline_kwh": 148.0,
+            "actual_kwh": 135.5,
+            "savings_pct": 8.4,
+            "savings_kwh": 12.5,
+            "cashback_krw": 1250,
+            "cashback_rate_krw_per_kwh": 100,
+            "status": "지급완료",
+        },
+        {
+            "month": "2026-04",
+            "baseline_kwh": 145.0,
+            "actual_kwh": None,
+            "savings_pct": None,
+            "savings_kwh": None,
+            "cashback_krw": None,
+            "cashback_rate_krw_per_kwh": None,
+            "status": "집계중",
+        },
+    ],
+    "HH003": [
+        {
+            "month": "2026-02",
+            "baseline_kwh": 98.5,
+            "actual_kwh": 82.3,
+            "savings_pct": 16.5,
+            "savings_kwh": 16.2,
+            "cashback_krw": 1620,
+            "cashback_rate_krw_per_kwh": 100,
+            "status": "지급완료",
+        },
+        {
+            "month": "2026-03",
+            "baseline_kwh": 95.0,
+            "actual_kwh": 78.8,
+            "savings_pct": 17.1,
+            "savings_kwh": 16.2,
+            "cashback_krw": 1620,
+            "cashback_rate_krw_per_kwh": 100,
+            "status": "지급완료",
+        },
+        {
+            "month": "2026-04",
+            "baseline_kwh": 92.0,
+            "actual_kwh": None,
+            "savings_pct": None,
+            "savings_kwh": None,
+            "cashback_krw": None,
+            "cashback_rate_krw_per_kwh": None,
+            "status": "집계중",
+        },
+    ],
 }
 
 _MOCK_TARIFF: dict[str, dict] = {
@@ -285,8 +349,9 @@ _MOCK_TARIFF: dict[str, dict] = {
     },
 }
 
-_KNOWN_HOUSEHOLDS = set(_MOCK_PROFILES.keys())
-_KNOWN_LOCATIONS  = set(_MOCK_WEATHER_WEEKLY.keys())
+_KNOWN_HOUSEHOLDS       = set(_MOCK_PROFILES.keys())
+_KNOWN_LOCATIONS        = set(_MOCK_WEATHER_WEEKLY.keys())
+_KNOWN_CASHBACK_HH      = set(_MOCK_CASHBACK_HISTORY.keys())
 
 
 # ─── Tool 함수 ──────────────────────────────────────────────────────────────────
@@ -378,24 +443,31 @@ def get_consumption_breakdown(household_id: str, date: str = "2026-04-27") -> di
     return {"summary": summary, "raw": breakdown}
 
 
-def get_dr_events(
-    date_range: tuple[str, str] | list[str],
-    region: str = "서울",
+def get_cashback_history(
+    household_id: str,
+    date_range: tuple[str, str] | list[str] | None = None,
 ) -> dict[str, Any]:
-    """DR(수요반응) 이벤트 발령 이력과 예정 이벤트 조회."""
-    loc      = region if region in _MOCK_DR_EVENTS else "서울"
-    events   = _MOCK_DR_EVENTS.get(loc, [])
-    start, end = date_range[0], date_range[1]
-    filtered  = [e for e in events if start <= e["date"] <= end]
-    if not filtered:
-        return {"summary": f"{start}~{end} {loc} DR 이벤트 없음", "raw": []}
-    completed = sum(1 for e in filtered if e["status"] == "완료")
-    scheduled = sum(1 for e in filtered if e["status"] == "예정")
-    summary   = (
-        f"{start}~{end} {loc} DR 이벤트 {len(filtered)}건 "
-        f"(완료 {completed}건, 예정 {scheduled}건)"
+    """에너지캐시백 월별 절감 실적·캐시백 지급 내역 조회.
+
+    직전 2개년 동월 평균 대비 3% 이상 절감 시 KEPCO가 30~100원/kWh 지급.
+    date_range가 없으면 전체 이력 반환.
+    """
+    if household_id not in _KNOWN_CASHBACK_HH:
+        return {"error": f"household_id not found: {household_id}", "code": "E_NOT_FOUND"}
+    records = _MOCK_CASHBACK_HISTORY[household_id]
+    if date_range:
+        start, end = date_range[0][:7], date_range[1][:7]  # YYYY-MM 비교
+        records = [r for r in records if start <= r["month"] <= end]
+    if not records:
+        return {"summary": "조회 기간 내 캐시백 이력 없음", "raw": []}
+    paid   = [r for r in records if r["status"] == "지급완료"]
+    total_kwh = sum(r["savings_kwh"] for r in paid if r["savings_kwh"])
+    total_krw = sum(r["cashback_krw"] for r in paid if r["cashback_krw"])
+    summary = (
+        f"캐시백 이력 {len(records)}개월: 지급완료 {len(paid)}개월, "
+        f"누적 절감 {total_kwh:.1f}kWh, 누적 캐시백 {total_krw:,}원"
     )
-    return {"summary": summary, "raw": filtered}
+    return {"summary": summary, "raw": records}
 
 
 def get_tariff_info(household_id: str) -> dict[str, Any]:
@@ -548,25 +620,24 @@ TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "get_dr_events",
-            "description": "지정 기간의 DR(수요반응) 이벤트 발령 이력과 예정 이벤트를 조회합니다.",
+            "name": "get_cashback_history",
+            "description": "에너지캐시백 월별 절감 실적과 캐시백 지급 내역을 조회합니다. 직전 2개년 동월 평균 대비 3% 이상 절감 시 KEPCO가 지급합니다.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "household_id": {
+                        "type": "string",
+                        "description": "익명화된 가구 식별자 (예: HH001)",
+                    },
                     "date_range": {
                         "type": "array",
                         "items": {"type": "string"},
                         "minItems": 2,
                         "maxItems": 2,
-                        "description": "날짜 범위 [시작일, 종료일] (YYYY-MM-DD 형식)",
-                    },
-                    "region": {
-                        "type": "string",
-                        "description": "지역명 (예: 서울)",
-                        "default": "서울",
+                        "description": "조회 기간 [시작월, 종료월] (YYYY-MM-DD 형식). 생략 시 전체 이력 반환.",
                     },
                 },
-                "required": ["date_range"],
+                "required": ["household_id"],
             },
         },
     },

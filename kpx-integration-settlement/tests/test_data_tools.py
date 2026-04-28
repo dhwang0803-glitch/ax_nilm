@@ -6,10 +6,10 @@ mock 데이터 범위 안의 정상 케이스와 unknown household_id 오류 케
 import pytest
 
 from src.agent.data_tools import (
+    get_cashback_history,
     get_consumption_breakdown,
     get_consumption_hourly,
     get_consumption_summary,
-    get_dr_events,
     get_forecast,
     get_household_profile,
     get_tariff_info,
@@ -162,33 +162,42 @@ class TestGetConsumptionBreakdown:
         _assert_error(result)
 
 
-# ─── get_dr_events ──────────────────────────────────────────────────────────────
+# ─── get_cashback_history ───────────────────────────────────────────────────────
 
-class TestGetDrEvents:
-    def test_events_in_range(self) -> None:
-        result = get_dr_events(["2026-04-20", "2026-04-30"], "서울")
+class TestGetCashbackHistory:
+    @pytest.mark.parametrize("hid", ["HH001", "HH002", "HH003"])
+    def test_all_history(self, hid: str) -> None:
+        result = get_cashback_history(hid)
         _assert_success(result)
         assert isinstance(result["raw"], list)
         assert len(result["raw"]) > 0
-        for evt in result["raw"]:
-            assert "event_id"   in evt
-            assert "date"       in evt
-            assert "start_time" in evt
-            assert "status"     in evt
+        for rec in result["raw"]:
+            assert "month"        in rec
+            assert "baseline_kwh" in rec
+            assert "status"       in rec
 
-    def test_no_events(self) -> None:
-        result = get_dr_events(["2025-01-01", "2025-01-31"], "서울")
+    def test_date_range_filter(self) -> None:
+        result = get_cashback_history("HH001", ["2026-02-01", "2026-02-28"])
+        _assert_success(result)
+        assert all(r["month"] == "2026-02" for r in result["raw"])
+
+    def test_no_records_in_range(self) -> None:
+        result = get_cashback_history("HH001", ["2025-01-01", "2025-01-31"])
         _assert_success(result)
         assert result["raw"] == []
 
-    def test_unknown_region_falls_back(self) -> None:
-        result = get_dr_events(["2026-04-20", "2026-04-30"], "제주")
-        _assert_success(result)
+    def test_unknown_household(self) -> None:
+        result = get_cashback_history("HH999")
+        _assert_error(result)
+        assert result["code"] == "E_NOT_FOUND"
 
-    def test_future_event_status(self) -> None:
-        result  = get_dr_events(["2026-04-28", "2026-04-30"], "서울")
-        statuses = [e["status"] for e in result["raw"]]
-        assert "예정" in statuses
+    def test_paid_records_have_cashback_amount(self) -> None:
+        result = get_cashback_history("HH001")
+        paid = [r for r in result["raw"] if r["status"] == "지급완료"]
+        assert len(paid) > 0
+        for rec in paid:
+            assert rec["cashback_krw"] is not None
+            assert rec["cashback_krw"] > 0
 
 
 # ─── get_tariff_info ────────────────────────────────────────────────────────────
