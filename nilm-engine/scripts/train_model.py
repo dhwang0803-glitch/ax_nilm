@@ -29,7 +29,7 @@ _NILM_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_NILM_ROOT / "src"))
 
 from acquisition.dataset import NILMDataset
-from classifier.label_map import N_APPLIANCES, get_on_thresholds
+from classifier.label_map import N_APPLIANCES, APPLIANCE_LABELS, get_on_thresholds
 from features.tda import compute_tda_features
 from models.seq2point import Seq2Point
 from models.bert4nilm import BERT4NILM
@@ -50,7 +50,8 @@ class _NILMDatasetWithTDA(Dataset):
 
         _tda_cache: Path | None = None
         if cache_dir is not None and hasattr(base, "cache_key"):
-            _tda_cache = cache_dir / f"tda_{base.cache_key}.pt"
+            from features.tda import TDA_DIM
+            _tda_cache = cache_dir / f"tda_{base.cache_key}_d{TDA_DIM}.pt"
 
         if _tda_cache is not None and _tda_cache.exists():
             self._tda = torch.load(str(_tda_cache), weights_only=True)
@@ -100,11 +101,46 @@ def masked_weighted_mse(
     on_weight: float = 5.0,
 ) -> torch.Tensor:
     """validity=False 채널 제외. ON 구간은 on_weight 배 가중해 trivial zero 예측 방지."""
-    # pred, target, on_off: (batch, N_APPLIANCES)
     weight = validity.float() * (1.0 + (on_weight - 1.0) * on_off.float())
     diff = (pred - target) ** 2 * weight
     denom = weight.sum().clamp(min=1.0)
     return diff.sum() / denom
+
+
+def compute_pos_weight(loader: DataLoader, device: torch.device) -> torch.Tensor:
+    """학습 데이터 ON/OFF 분포에서 per-channel pos_weight 계산.
+
+    sqrt scaling + clamp(max=20)으로 발산 방지 (리뷰 1번).
+    분모 floor=10 — ON 샘플 < 10인 채널은 임계 낮춤.
+    """
+    on_counts  = torch.zeros(N_APPLIANCES)
+    off_counts = torch.zeros(N_APPLIANCES)
+
+    for batch in loader:
+        on_off   = batch[-2]   # (batch, 22, window_size)
+        validity = batch[-1]   # (batch, 22)
+        center   = on_off.shape[-1] // 2
+        mask     = on_off[:, :, center].float()           # (batch, 22)
+        valid    = validity.float()
+        on_counts  += (mask * valid).sum(0).cpu()
+        off_counts += ((1.0 - mask) * valid).sum(0).cpu()
+
+    pw = torch.sqrt(off_counts / on_counts.clamp(min=10)).clamp(max=20.0)
+    return pw.to(device)
+
+
+def bce_validity(
+    logit: torch.Tensor,
+    target: torch.Tensor,
+    validity: torch.Tensor,
+    pos_weight: torch.Tensor,
+) -> torch.Tensor:
+    """validity 마스크 + per-channel pos_weight BCE. (batch, 22) 입력."""
+    weight = target.float() * pos_weight.unsqueeze(0) + (1.0 - target.float())
+    loss   = F.binary_cross_entropy_with_logits(logit, target.float(),
+                                                weight=weight, reduction="none")
+    valid  = validity.float()
+    return (loss * valid).sum() / valid.sum().clamp(min=1.0)
 
 
 # ── 평가 함수 ─────────────────────────────────────────────────────────────────
@@ -115,41 +151,51 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     model.eval()
 
     all_pred, all_true, all_on_off, all_valid = [], [], [], []
+    all_fusion_logit = []
 
     for batch in loader:
         if model_name == "cnn_tda":
             agg, tda, target, on_off, validity = batch
             agg = agg.unsqueeze(1).to(device)
             tda = tda.to(device)
-            pred, _ = model(agg, tda)
+            result = model(agg, tda)
+            pred = result[0]
+            fusion_logit = result[3] if len(result) == 4 else None
         elif model_name == "seq2point":
             agg, target, on_off, validity = batch
             pred = model(agg.unsqueeze(1).to(device))
+            fusion_logit = None
         else:  # bert4nilm
             agg, target, on_off, validity = batch
             pred = model(agg.to(device))
+            fusion_logit = None
 
-        center = target.shape[-1] // 2
+        center   = target.shape[-1] // 2
         target_c = target[:, :, center].to(device)
-        valid = validity.to(device).float()
+        valid    = validity.to(device).float()
 
         all_pred.append(pred.cpu().numpy())
         all_true.append(target_c.cpu().numpy())
         all_on_off.append(on_off[:, :, center].numpy())
         all_valid.append(valid.cpu().numpy())
+        if fusion_logit is not None:
+            all_fusion_logit.append(fusion_logit.cpu().numpy())
 
     pred_arr   = np.concatenate(all_pred,   axis=0)   # (N, 22)
     true_arr   = np.concatenate(all_true,   axis=0)
     on_off_arr = np.concatenate(all_on_off, axis=0)   # (N, 22) bool
-    valid_arr  = np.concatenate(all_valid,  axis=0)   # 1 = 이 house에 해당 가전 존재
+    valid_arr  = np.concatenate(all_valid,  axis=0)
 
-    # ── 전체 평균 지표 ────────────────────────────────────────────────────────
-    from classifier.label_map import APPLIANCE_LABELS, get_on_thresholds
-    raw_thr  = np.array(get_on_thresholds(), dtype=np.float32)
-    scaler   = loader.dataset.scaler if hasattr(loader.dataset, "scaler") else \
-               loader.dataset.base.scaler
-    norm_thr = (raw_thr / scaler.std) if scaler is not None else raw_thr
-    pred_on  = pred_arr >= norm_thr[np.newaxis, :]
+    # ── ON/OFF 예측 ───────────────────────────────────────────────────────────
+    raw_thr = np.array(get_on_thresholds(), dtype=np.float32)
+    # target이 raw W → 임계도 raw W로 직접 비교
+    pred_on = pred_arr >= raw_thr[np.newaxis, :]
+
+    # cls 헤드 사용 가능 시 logit 기반 F1도 계산
+    has_cls = len(all_fusion_logit) > 0
+    if has_cls:
+        logit_arr  = np.concatenate(all_fusion_logit, axis=0)
+        pred_on_cls = logit_arr >= 0.0   # sigmoid >= 0.5
 
     valid_mask = valid_arr > 0
     p    = pred_arr[valid_mask]
@@ -167,12 +213,20 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     fn   = float((~p_on & t_on).sum())
     f1   = 2 * tp / (2 * tp + fp + fn + 1e-8)
 
+    f1_cls = None
+    if has_cls:
+        pc_on = pred_on_cls[valid_mask]
+        tp_c  = float((pc_on & t_on).sum())
+        fp_c  = float((pc_on & ~t_on).sum())
+        fn_c  = float((~pc_on & t_on).sum())
+        f1_cls = 2 * tp_c / (2 * tp_c + fp_c + fn_c + 1e-8)
+
     # ── 22종 개별 지표 ────────────────────────────────────────────────────────
     per_appliance = {}
     for i, name in enumerate(APPLIANCE_LABELS):
         col_valid = valid_arr[:, i] > 0
         if not col_valid.any():
-            per_appliance[name] = {"mae": None, "rmse": None, "f1": None}
+            per_appliance[name] = {"mae": None, "rmse": None, "f1": None, "f1_cls": None}
             continue
         pi    = pred_arr[col_valid, i]
         ti    = true_arr[col_valid, i]
@@ -181,13 +235,22 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
         tp_i  = float((pi_on & ti_on).sum())
         fp_i  = float((pi_on & ~ti_on).sum())
         fn_i  = float((~pi_on & ti_on).sum())
+        f1_cls_i = None
+        if has_cls:
+            pc_on_i = pred_on_cls[col_valid, i]
+            tc  = float((pc_on_i & ti_on).sum())
+            fc  = float((pc_on_i & ~ti_on).sum())
+            fnc = float((~pc_on_i & ti_on).sum())
+            f1_cls_i = 2 * tc / (2 * tc + fc + fnc + 1e-8)
         per_appliance[name] = {
-            "mae":  float(np.abs(pi - ti).mean()),
-            "rmse": float(np.sqrt(((pi - ti) ** 2).mean())),
-            "f1":   2 * tp_i / (2 * tp_i + fp_i + fn_i + 1e-8),
+            "mae":   float(np.abs(pi - ti).mean()),
+            "rmse":  float(np.sqrt(((pi - ti) ** 2).mean())),
+            "f1":    2 * tp_i / (2 * tp_i + fp_i + fn_i + 1e-8),
+            "f1_cls": f1_cls_i,
         }
 
-    return {"mae": mae, "rmse": rmse, "sae": sae, "f1": f1,
+    return {"mae": mae, "rmse": rmse, "sae": sae,
+            "f1": f1, "f1_cls": f1_cls,
             "per_appliance": per_appliance}
 
 
@@ -201,6 +264,8 @@ def train_one_epoch(
     model_name: str,
     device: torch.device,
     amp_scaler: torch.cuda.amp.GradScaler | None = None,
+    pos_weight: torch.Tensor | None = None,
+    lambda_mse: float = 0.1,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -214,20 +279,31 @@ def train_one_epoch(
                 agg, tda, target, on_off, validity = batch
                 agg = agg.unsqueeze(1).to(device)
                 tda = tda.to(device)
-                pred, _ = model(agg, tda)
+                result = model(agg, tda)
+                pred, _conf, cnn_logit, fusion_logit = result
             elif model_name == "seq2point":
                 agg, target, on_off, validity = batch
                 pred = model(agg.unsqueeze(1).to(device))
+                cnn_logit = fusion_logit = None
             else:  # bert4nilm
                 agg, target, on_off, validity = batch
                 pred = model(agg.to(device))
+                cnn_logit = fusion_logit = None
 
-            center = target.shape[-1] // 2
+            center   = target.shape[-1] // 2
             target_c = target[:, :, center].to(device)
             on_off_c = on_off[:, :, center].to(device)
             validity = validity.to(device)
 
-            loss = masked_weighted_mse(pred, target_c, on_off_c, validity)
+            mse_loss = masked_weighted_mse(pred, target_c, on_off_c, validity)
+
+            if cnn_logit is not None and pos_weight is not None:
+                # dual head BCE — gate collapse 방지 (리뷰 2번)
+                bce_cnn    = bce_validity(cnn_logit,    on_off_c, validity, pos_weight)
+                bce_fusion = bce_validity(fusion_logit, on_off_c, validity, pos_weight)
+                loss = bce_cnn + bce_fusion + lambda_mse * mse_loss
+            else:
+                loss = mse_loss
 
         if use_amp:
             amp_scaler.scale(loss).backward()
@@ -369,6 +445,14 @@ def main():
         except Exception as e:
             print(f"  MLflow 스킵: {e}")
 
+    # ── pos_weight 계산 (cnn_tda 전용) ──────────────────────────────────────
+    pos_weight = None
+    if args.model == "cnn_tda":
+        print("  pos_weight 계산 중...")
+        pos_weight = compute_pos_weight(train_loader, device)
+        for name, pw in zip(APPLIANCE_LABELS, pos_weight.cpu().tolist()):
+            print(f"    {name}: {pw:.2f}")
+
     # ── 학습 루프 ────────────────────────────────────────────────────────────
     amp_scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
 
@@ -380,7 +464,8 @@ def main():
 
     for epoch in range(1, epochs + 1):
         t_epoch = time.perf_counter()
-        train_loss = train_one_epoch(model, train_loader, optimizer, args.model, device, amp_scaler)
+        train_loss = train_one_epoch(model, train_loader, optimizer, args.model, device,
+                                      amp_scaler, pos_weight=pos_weight)
         epoch_times.append(time.perf_counter() - t_epoch)
 
         val_metrics = evaluate(model, val_loader, args.model, device)
@@ -389,11 +474,13 @@ def main():
         scheduler.step(val_mae)
         lr_now = optimizer.param_groups[0]["lr"]
 
+        f1_cls_str = (f"  val_f1_cls={val_metrics['f1_cls']:.3f}"
+                      if val_metrics.get("f1_cls") is not None else "")
         print(
             f"  epoch {epoch:3d}/{epochs}  "
             f"train_loss={train_loss:.4f}  "
-            f"val_mae={val_mae:.2f}  val_f1={val_metrics['f1']:.3f}  "
-            f"lr={lr_now:.2e}  epoch_time={epoch_times[-1]:.1f}s"
+            f"val_mae={val_mae:.2f}  val_f1={val_metrics['f1']:.3f}"
+            f"{f1_cls_str}  lr={lr_now:.2e}  epoch_time={epoch_times[-1]:.1f}s"
         )
 
         if mlflow_run:

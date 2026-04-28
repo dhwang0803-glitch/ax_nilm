@@ -7,11 +7,24 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+import pywt
 import torch
 from torch.utils.data import Dataset
 
 if TYPE_CHECKING:
     import gcsfs as gcsfs_type
+
+def _wavelet_denoise(signal: np.ndarray, wavelet: str = "db4", level: int = 1) -> np.ndarray:
+    """agg_power 고주파 노이즈 제거. level=1로 최고주파수 성분만 제거해 transient 보존."""
+    if len(signal) < 2 ** (level + 1):
+        return signal
+    coeffs = pywt.wavedec(signal, wavelet, level=level)
+    sigma = np.median(np.abs(coeffs[-1])) / 0.6745  # MAD 기반 노이즈 추정
+    threshold = sigma * np.sqrt(2 * np.log(max(len(signal), 2)))
+    coeffs[1:] = [pywt.threshold(c, threshold, mode="soft") for c in coeffs[1:]]
+    denoised = pywt.waverec(coeffs, wavelet)
+    return np.clip(denoised[: len(signal)], 0, None).astype(np.float32)
+
 
 # ── GCS 경로 상수 ─────────────────────────────────────────────────────────────
 GCS_BUCKET = "ax-nilm-data-dhwang0803-us"
@@ -191,11 +204,15 @@ class GCSNILMDataset(Dataset):
         cache_dir: str | Path | None = None,
         event_context: int | None = None,
         steady_stride: int | None = None,
+        resample_hz: int = 30,
+        appliance_group: str | None = None,
     ):
         """
-        event_context : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
-        steady_stride : 정상 구간 커버리지 stride. None이면 stride × 20 자동 설정.
-        cache_dir     : _segments(raw numpy)만 캐시. window_index는 항상 재생성.
+        event_context   : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
+        steady_stride   : 정상 구간 커버리지 stride. None이면 stride × 20 자동 설정.
+        cache_dir       : house별 30Hz _segments를 npz로 캐시. window_index는 항상 재생성.
+        resample_hz     : 다운샘플 목표 Hz (30 or 1). slow/always_on 그룹에는 1 권장.
+        appliance_group : "fast" | "slow" | "always_on". 지정 시 해당 그룹 가전만 validity=True.
         """
         from datetime import timedelta
 
@@ -207,17 +224,21 @@ class GCSNILMDataset(Dataset):
             from acquisition.loader import build_active_mask
 
         try:
-            from .dataset import _event_window_starts
+            from .dataset import _event_window_starts, _downsample_block_avg, _downsample_mask
         except ImportError:
-            from acquisition.dataset import _event_window_starts
+            from acquisition.dataset import _event_window_starts, _downsample_block_avg, _downsample_mask
+
+        from classifier.label_map import SPEED_GROUP
 
         self.window_size = window_size
         self.stride = stride
         self.scaler = scaler
+        self.resample_hz = resample_hz
+        self.appliance_group = appliance_group
 
         # cache_key: TDA 캐시 파일명 등 외부에서 참조용 (전체 파라미터 해시)
         self.cache_key = hashlib.md5(
-            f"{sorted(houses)}|{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}".encode()
+            f"{sorted(houses)}|{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}|{resample_hz}".encode()
         ).hexdigest()[:12]
 
         # 주차/기간 파라미터 해시 — house별 캐시 파일명에 사용
@@ -298,6 +319,7 @@ class GCSNILMDataset(Dataset):
                         print(f"[GCSNILMDataset] {house_id}/{ch} 로드 실패: {e}")
 
                 agg_power = agg_df["active_power"].fillna(0).to_numpy(dtype=np.float32)
+                agg_power = _wavelet_denoise(agg_power)
 
                 if _hcache:
                     np.savez_compressed(
@@ -306,6 +328,13 @@ class GCSNILMDataset(Dataset):
                         on_off=on_off_mask, validity=validity,
                     )
                     print(f"[GCSNILMDataset] 캐시 저장: {_hcache.name}")
+
+            # 다운샘플 — 캐시는 항상 30Hz로 저장, 리샘플은 로드 후 적용
+            if resample_hz < 30:
+                _factor = 30 // resample_hz
+                agg_power    = _downsample_block_avg(agg_power,    _factor)
+                target_power = _downsample_block_avg(target_power, _factor)
+                on_off_mask  = _downsample_mask(on_off_mask,       _factor)
 
             if fit_scaler:
                 _all_agg.append(agg_power)
@@ -320,6 +349,18 @@ class GCSNILMDataset(Dataset):
                 (self.scaler.transform(agg), self.scaler.transform_target(tgt), on_off, validity)
                 for agg, tgt, on_off, validity in self._segments
             ]
+
+        # ── 2.5단계: appliance_group 필터 — 해당 그룹 외 가전 validity=False ──
+        if appliance_group is not None:
+            _group_names = {n for n, g in SPEED_GROUP.items() if g == appliance_group}
+            filtered = []
+            for agg, tgt, on_off, val in self._segments:
+                new_val = val.copy()
+                for name, idx in APPLIANCE_INDEX.items():
+                    if name not in _group_names:
+                        new_val[idx] = False
+                filtered.append((agg, tgt, on_off, new_val))
+            self._segments = filtered
 
         # ── 3단계: window_index 생성 (항상 재생성, 캐시 불필요) ───────────────
         _ss = steady_stride if steady_stride is not None else stride * 20

@@ -16,6 +16,7 @@ from .loader import (
     load_channel_data,
 )
 from .preprocessor import PowerScaler
+from classifier.label_map import SPEED_GROUP, SPEED_GROUP_CONFIG
 
 # 22종 가전 고정 인덱스 — config/dataset.yaml 순서와 동일하게 유지
 APPLIANCE_INDEX: dict[str, int] = {
@@ -43,6 +44,25 @@ APPLIANCE_INDEX: dict[str, int] = {
     "무선공유기/셋톱박스": 21,
 }
 N_APPLIANCES = len(APPLIANCE_INDEX)  # 22
+
+
+def _downsample_block_avg(arr: np.ndarray, factor: int) -> np.ndarray:
+    """1D 또는 2D(N_apps, samples) 배열을 block 평균으로 다운샘플."""
+    if factor == 1:
+        return arr
+    if arr.ndim == 1:
+        n = (len(arr) // factor) * factor
+        return arr[:n].reshape(-1, factor).mean(axis=1).astype(arr.dtype)
+    n = (arr.shape[1] // factor) * factor
+    return arr[:, :n].reshape(arr.shape[0], -1, factor).mean(axis=2).astype(arr.dtype)
+
+
+def _downsample_mask(mask: np.ndarray, factor: int) -> np.ndarray:
+    """bool ON/OFF 마스크를 block 다운샘플 — 블록 내 any True면 True."""
+    if factor == 1:
+        return mask
+    n = (mask.shape[1] // factor) * factor
+    return mask[:, :n].reshape(mask.shape[0], -1, factor).any(axis=2)
 
 
 def _event_window_starts(
@@ -127,15 +147,19 @@ class NILMDataset(Dataset):
         cache_dir: str | Path | None = None,
         event_context: int | None = None,
         steady_stride: int | None = None,
+        resample_hz: int = 30,
+        appliance_group: str | None = None,
     ):
         """
-        week          : 1-based 주차 번호. 각 house의 시작일 기준으로 7일 구간을 자동 계산.
-        date_range    : ("YYYY-MM-DD", "YYYY-MM-DD") — week 미지정 시 사용.
-        scaler        : 외부에서 fit된 PowerScaler. 제공 시 바로 적용.
-        fit_scaler    : True면 이 dataset의 aggregate 전력값으로 scaler를 새로 fit.
-        cache_dir     : 지정 시 _segments(raw numpy)를 npz로 캐시. window_index는 항상 재생성.
-        event_context : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
-        steady_stride : 정상 구간 커버리지 stride. None이면 stride × 20 자동 설정.
+        week           : 1-based 주차 번호. 각 house의 시작일 기준으로 7일 구간을 자동 계산.
+        date_range     : ("YYYY-MM-DD", "YYYY-MM-DD") — week 미지정 시 사용.
+        scaler         : 외부에서 fit된 PowerScaler. 제공 시 바로 적용.
+        fit_scaler     : True면 이 dataset의 aggregate 전력값으로 scaler를 새로 fit.
+        cache_dir      : 지정 시 _segments(raw numpy)를 npz로 캐시. window_index는 항상 재생성.
+        event_context  : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
+        steady_stride  : 정상 구간 커버리지 stride. None이면 stride × 20 자동 설정.
+        resample_hz    : 다운샘플 목표 Hz (30 or 1). slow/always_on 그룹에는 1 권장.
+        appliance_group: "fast" | "slow" | "always_on". 지정 시 해당 그룹 가전만 validity=True.
         """
         from datetime import timedelta
 
@@ -147,7 +171,7 @@ class NILMDataset(Dataset):
 
         # 캐시 키: 샘플링 파라미터(event_context, steady_stride)는 제외 — window_index는 항상 재생성
         _key = hashlib.md5(
-            f"{sorted(houses)}|{date_range}|{week}|{window_size}|{stride}".encode()
+            f"{sorted(houses)}|{date_range}|{week}|{window_size}|{stride}|{resample_hz}".encode()
         ).hexdigest()[:12]
         self.cache_key = _key
         _cache_path = Path(cache_dir) / f"nilm_{_key}.npz" if cache_dir else None
@@ -216,6 +240,11 @@ class NILMDataset(Dataset):
                     validity[idx] = True
 
                 agg_power = agg_df["active_power"].to_numpy(dtype=np.float32)
+                if resample_hz < 30:
+                    _factor = 30 // resample_hz
+                    agg_power    = _downsample_block_avg(agg_power,    _factor)
+                    target_power = _downsample_block_avg(target_power, _factor)
+                    on_off_mask  = _downsample_mask(on_off_mask,       _factor)
                 if fit_scaler:
                     _all_agg.append(agg_power)
                 self._segments.append((agg_power, target_power, on_off_mask, validity))
@@ -245,6 +274,21 @@ class NILMDataset(Dataset):
                 )
                 for agg, tgt, on_off, validity in self._segments
             ]
+
+        # ── 2.5단계: appliance_group 필터 — 해당 그룹 외 가전 validity=False ──
+        if appliance_group is not None:
+            _group_names = {n for n, g in SPEED_GROUP.items() if g == appliance_group}
+            filtered = []
+            for agg, tgt, on_off, val in self._segments:
+                new_val = val.copy()
+                for name, idx in APPLIANCE_INDEX.items():
+                    if name not in _group_names:
+                        new_val[idx] = False
+                filtered.append((agg, tgt, on_off, new_val))
+            self._segments = filtered
+
+        self.resample_hz = resample_hz
+        self.appliance_group = appliance_group
 
         # ── 3단계: window_index 생성 (항상 재생성, 캐시 불필요) ───────────────
         _ss = steady_stride if steady_stride is not None else stride * 20
