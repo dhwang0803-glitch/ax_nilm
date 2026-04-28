@@ -341,6 +341,19 @@ class NILMDataset(Dataset):
                 f"  → 비율 1:{_ratio:.1f}\n"
                 f"  총 {len(self._window_index):,} windows"
             )
+            # per-class ON 윈도우 수 (리뷰 7번) — type2 등 희소 가전 100개 미만 모니터링
+            _seg_wins: dict[int, list[int]] = {}
+            for _si, _s in self._window_index:
+                _seg_wins.setdefault(_si, []).append(_s)
+            _on_win = np.zeros(N_APPLIANCES, dtype=int)
+            for _si, _starts in _seg_wins.items():
+                _, _, _oo, _val = self._segments[_si]
+                _ctrs = np.clip(np.array(_starts) + window_size // 2, 0, _oo.shape[1] - 1)
+                _on_win += (_oo[:, _ctrs] & _val[:, None]).sum(axis=1)
+            print("  per-class ON 윈도우 (center 기준):")
+            for _i, _name in enumerate(APPLIANCE_LABELS):
+                _flag = " ⚠️ <100" if _on_win[_i] < 100 else ""
+                print(f"    {_name}: {_on_win[_i]:,}{_flag}")
         else:
             print(f"[NILMDataset] full sliding  →  {len(self._window_index):,} windows")
 
