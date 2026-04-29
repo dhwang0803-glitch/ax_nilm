@@ -417,6 +417,7 @@ def main():
     patience    = train_cfg["training"]["early_stopping_patience"]
     lr          = train_cfg["training"]["learning_rate"]
     wd          = train_cfg["optimizer"]["weight_decay"]
+    lambda_mse  = train_cfg["training"]["loss_weights"]["mse"]
 
     # week 우선, 없으면 date_range 사용
     train_week       = exp_cfg.get("week")
@@ -491,6 +492,13 @@ def main():
         else:
             print(f"  └─ 경고: {prev_ckpt.name} 없음 — 처음부터 학습")
 
+    if resume_exp:
+        _prev_metrics_path = _NILM_ROOT / "docs" / "results" / f"{resume_exp}_{args.model}_metrics.json"
+        if _prev_metrics_path.exists():
+            _prev_m = json.load(open(_prev_metrics_path))
+            lr = _prev_m.get("final_lr", lr)
+            print(f"  └─ LR 이어받기: {lr:.2e}")
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=train_cfg["scheduler"]["factor"],
@@ -547,7 +555,7 @@ def main():
         t_epoch = time.perf_counter()
         train_loss = train_one_epoch(model, train_loader, optimizer, args.model, device,
                                       amp_scaler, pos_weight=pos_weight,
-                                      appliance_scale=appliance_scale)
+                                      lambda_mse=lambda_mse, appliance_scale=appliance_scale)
         epoch_times.append(time.perf_counter() - t_epoch)
 
         val_metrics = evaluate(model, val_loader, args.model, device)
@@ -659,7 +667,7 @@ def main():
         mlflow.end_run()
 
     _cls_summary = (
-        f"  F1_cls={final_metrics['f1_cls']:.3f}(thr={final_metrics['best_cls_threshold']:+.1f})"
+        f"  F1_cls={final_metrics['f1_cls']:.3f}"
         if final_metrics.get("f1_cls") is not None else ""
     )
     print(f"\n[완료] {args.exp}/{args.model}  MAE={final_metrics['mae']:.4f}  RMSE={final_metrics['rmse']:.4f}  SAE={final_metrics['sae']:.4f}  F1={final_metrics['f1']:.3f}{_cls_summary}")

@@ -48,6 +48,7 @@ class BERT4NILM(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(128, N_APPLIANCES),
+            nn.ReLU(),
         )
 
     def forward(self, x):

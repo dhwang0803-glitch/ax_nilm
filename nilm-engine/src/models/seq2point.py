@@ -44,7 +44,7 @@ class Seq2Point(nn.Module):
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(512, N_APPLIANCES),
-            # ReLU 제거: 정규화 공간에서 타깃은 음수 → 역변환 후 클리핑으로 처리
+            nn.ReLU(),
         )
 
     def forward(self, x):

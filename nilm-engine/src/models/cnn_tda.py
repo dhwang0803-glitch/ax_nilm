@@ -124,14 +124,14 @@ class CNNTDAHybrid(nn.Module):
         cnn_pred = self.cnn_reg(cnn_f)                  # (batch, N_APPLIANCES)
 
         if tda is None:
-            return cnn_pred, confidence
+            return F.relu(cnn_pred), confidence
 
         tda_feat    = self.tda_mlp(tda)                                  # (batch, 128)
         fused       = self.cross_attn(cnn_embed, tda_feat)               # (batch, 512)
         fusion_f    = self.fusion_feat(fused)                            # (batch, 256)
         fusion_pred = self.fusion_reg(fusion_f)                          # (batch, N_APPLIANCES)
 
-        pred = confidence * cnn_pred + (1 - confidence) * fusion_pred   # soft mixture
+        pred = F.relu(confidence * cnn_pred + (1 - confidence) * fusion_pred)  # non-negative power
 
         cnn_logit    = self.cnn_cls(cnn_f)                               # (batch, N_APPLIANCES)
         fusion_logit = self.fusion_cls(fusion_f)                         # (batch, N_APPLIANCES)
