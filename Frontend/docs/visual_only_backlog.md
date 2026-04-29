@@ -73,9 +73,57 @@
 
 ---
 
-## 후속 Phase 추가 예정 (Phase 06 settings + 07 insights)
+## Phase 06 — 설정 / 계정 (`/settings/*`)
 
-Phase 06/07 본 구현 시 본 백로그도 갱신 — 5탭 settings 와 AI 진단의 placeholder 항목 추가.
+> PLAN_06_SETTINGS.md §8 Out of Scope 와 동기화. 본 구현 PR 머지 시 항목 검증.
+
+### 06-A 프로필 / 한전 연동 (`/settings/account`)
+
+| 항목 | 위치 | 현재 동작 | 본 구현 필요 | 우선순위 |
+|------|------|-----------|---------------|----------|
+| 프로필 "수정" pill | `features/settings/components/ProfileCard.tsx` | 클릭 visual only | 프로필 편집 모달 + PATCH `/api/settings/account/profile` | MED |
+| 한전 "재연동" pill | `features/settings/components/KepcoLinkCard.tsx` | 클릭 visual only | 한전 OAuth/고객번호 재인증 흐름 | MED |
+
+### 06-B 알림 (`/settings/notifications`)
+
+| 항목 | 위치 | 현재 동작 | 본 구현 필요 | 우선순위 |
+|------|------|-----------|---------------|----------|
+| 매트릭스 checkbox 저장 | `features/settings/components/NotificationMatrixCard.tsx` | 로컬 state 만, 서버 미전달 | PATCH `/api/settings/notifications` + debounce | MED |
+| 방해 금지 시간 저장 | `features/settings/components/DoNotDisturbCard.tsx` | 로컬 state 만 | 같은 endpoint 에 묶어 저장 | MED |
+
+### 06-C 보안 (`/settings/security`)
+
+| 항목 | 위치 | 현재 동작 | 본 구현 필요 | 우선순위 |
+|------|------|-----------|---------------|----------|
+| 비밀번호 변경 | `features/settings/components/PasswordCard.tsx` | mock success 메시지 | POST `/api/auth/password` + 현재 비밀번호 검증 | HIGH |
+| 2FA 활성화 | `features/settings/components/TwoFactorCard.tsx` | 토글 visual | TOTP QR + 백업 코드 + 검증 흐름 | HIGH |
+| 세션 강제 로그아웃 | `features/settings/components/SessionsCard.tsx` | 버튼 visual | DELETE `/api/auth/sessions/:id` | HIGH |
+| 계정 삭제 | `features/settings/components/DangerZoneCard.tsx` | alert visual | confirm 모달 + 추가 인증 + DELETE 흐름 + 데이터 보존 정책 | HIGH |
+
+### 06-D 이상 탐지 내역 (`/settings/anomaly-log`)
+
+| 항목 | 위치 | 현재 동작 | 본 구현 필요 | 우선순위 |
+|------|------|-----------|---------------|----------|
+| 필터 서버 사이드 전환 | `features/settings/components/FilterPillsCard.tsx` | 클라이언트 사이드 필터링(useMemo) 작동 | 백엔드 합류 시 query param 송신 + 페이징 | MED |
+| CSV 내보내기 | `features/settings/components/ExportToolbar.tsx` | alert "준비 중" | client blob 또는 백엔드 export endpoint (Phase 04 와 통합) | HIGH |
+| JSON 내보내기 | 같음 | alert "준비 중" | 같음 | HIGH |
+| PDF 내보내기 | 같음 | alert "준비 중" | 백엔드 PDF 생성 (jsPDF 또는 server-side) | MED |
+
+### 06-E 이메일 연동 (`/settings/email`)
+
+| 항목 | 위치 | 현재 동작 | 본 구현 필요 | 우선순위 |
+|------|------|-----------|---------------|----------|
+| 수신 주소 저장 | `features/settings/components/EmailRecipientCard.tsx` | 로컬 state 만 | PATCH `/api/settings/email` | MED |
+| 알림 토글 4종 저장 | `features/settings/components/EmailNotificationToggleCard.tsx` | 로컬 state 만 | 같은 endpoint 에 묶어 저장 | MED |
+| 테스트 메일 발송 | `features/settings/components/EmailTestCard.tsx` | mock success 200ms 후 표시 | POST `/api/settings/email/test` + 실 SMTP 발송 결과 | MED |
+| **SMTP/POP 사용자 직접 설정** | (미구현 — `AdvancedSmtpDisclosure` 한 줄 안내) | collapsed details | **검토 필요**: B2C UI 노출 여부 — admin/B2B 전용 분리 또는 영구 제외 | LOW |
+| 이메일 템플릿 편집 | (미구현) | 없음 | 사용자가 직접 편집하는 시나리오 부재 — admin 전용 분리 권고 | LOW |
+
+---
+
+## 후속 Phase 추가 예정 (Phase 07 insights)
+
+Phase 07 본 구현 시 본 백로그도 갱신 — AI 진단 화면의 placeholder 항목 추가.
 
 ## 출품 후 우선순위 정리
 
