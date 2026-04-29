@@ -1,3 +1,65 @@
-import type { HttpHandler } from "msw";
+import { HttpResponse, http } from "msw";
 
-export const handlers: HttpHandler[] = [];
+const VALID_EMAIL = "test@example.com";
+const VALID_PASSWORD = "password123";
+const TAKEN_EMAIL = "taken@test.com";
+
+type LoginBody = { email: string; password: string };
+type SignupBody = {
+  email: string;
+  password: string;
+  name: string;
+  agreeTerms: boolean;
+  kepcoCustomerNumber: string | null;
+};
+
+export const handlers = [
+  http.post("/auth/login", async ({ request }) => {
+    const body = (await request.json()) as LoginBody;
+    if (body.email === VALID_EMAIL && body.password === VALID_PASSWORD) {
+      return HttpResponse.json({
+        user: { id: "u1", email: VALID_EMAIL, name: "테스터" },
+      });
+    }
+    return HttpResponse.json(
+      { code: "INVALID_CREDENTIALS", message: "이메일 또는 비밀번호가 일치하지 않습니다" },
+      { status: 401 }
+    );
+  }),
+
+  http.post("/auth/signup", async ({ request }) => {
+    const body = (await request.json()) as SignupBody;
+    if (body.email === TAKEN_EMAIL) {
+      return HttpResponse.json(
+        { code: "EMAIL_TAKEN", message: "이미 가입된 이메일입니다" },
+        { status: 422 }
+      );
+    }
+    return HttpResponse.json({
+      user: { id: "u-new", email: body.email, name: body.name },
+    });
+  }),
+
+  http.get("/auth/me", () => {
+    // dev 단계는 zustand store 가 세션 권위 — /auth/me 는 prod 전환 시 활용. 기본 401.
+    return new HttpResponse(null, { status: 401 });
+  }),
+
+  http.post("/auth/logout", () => {
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post("/auth/oauth/:provider", ({ params }) => {
+    const provider = params.provider as string;
+    if (!["kakao", "naver", "google"].includes(provider)) {
+      return HttpResponse.json({ code: "UNKNOWN_PROVIDER" }, { status: 400 });
+    }
+    return HttpResponse.json({
+      user: {
+        id: `u-${provider}`,
+        email: `${provider}@example.com`,
+        name: `${provider} 사용자`,
+      },
+    });
+  }),
+];

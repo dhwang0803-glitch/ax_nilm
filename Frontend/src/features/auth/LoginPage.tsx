@@ -1,10 +1,18 @@
+import { Navigate, useSearchParams } from "react-router-dom";
+import { AuthLayout } from "./components/AuthLayout";
+import { LoginForm } from "./components/LoginForm";
+import { useAuth } from "./useAuth";
+
 export function LoginPage() {
+  const user = useAuth((s) => s.user);
+  const [searchParams] = useSearchParams();
+  const from = searchParams.get("from") ?? "/home";
+  if (user) {
+    return <Navigate to={from} replace />;
+  }
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg p-8">
-      <div className="w-full max-w-md border border-line-2 bg-canvas p-8">
-        <h1 className="text-2xl font-semibold">로그인</h1>
-        <p className="mt-2 text-sm text-ink-3">Phase 01 에서 본 구현 — 좌우 분할 변형 A</p>
-      </div>
-    </div>
+    <AuthLayout brandTitle="우리집 전기, 데이터로 똑똑하게 절약하세요.">
+      <LoginForm />
+    </AuthLayout>
   );
 }
