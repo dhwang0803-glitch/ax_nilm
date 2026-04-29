@@ -44,14 +44,22 @@ def _compute_tda_one(agg_np: np.ndarray) -> np.ndarray:
 class _NILMDatasetWithTDA(Dataset):
     """NILMDataset에 TDA 특징을 추가한 래퍼 (cnn_tda 전용)."""
 
-    def __init__(self, base: NILMDataset, cache_dir: Path | None = None):
+    def __init__(
+        self,
+        base: NILMDataset,
+        cache_dir: Path | None = None,
+        event_context: int | None = None,
+        steady_stride: int | None = None,
+    ):
         self.base = base
         n = len(base)
 
         _tda_cache: Path | None = None
         if cache_dir is not None and hasattr(base, "cache_key"):
             from features.tda import TDA_DIM
-            _tda_cache = cache_dir / f"tda_{base.cache_key}_d{TDA_DIM}.pt"
+            _ec = event_context or 0
+            _ss = steady_stride or 0
+            _tda_cache = cache_dir / f"tda_{base.cache_key}_ec{_ec}_ss{_ss}_d{TDA_DIM}.pt"
 
         _need_compute = True
         if _tda_cache is not None and _tda_cache.exists():
@@ -144,6 +152,8 @@ def compute_pos_weight(loader: DataLoader, device: torch.device, max_weight: flo
     pw = torch.sqrt(off_counts / on_counts.clamp(min=10)).clamp(max=max_weight)
     # validity=0 for all windows → off_counts=0 → sqrt(0)=0 → ON 샘플에 weight 0 적용 방지
     pw = torch.where(total_counts == 0, torch.ones_like(pw), pw)
+    # on_counts < 5 → max_weight(50) 적용 시 BCE gradient 폭증 방지 (false positive 양산 차단)
+    pw = torch.where(on_counts < 5, torch.ones_like(pw), pw)
     return pw.to(device)
 
 
@@ -164,8 +174,18 @@ def bce_validity(
 # ── 평가 함수 ─────────────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torch.device) -> dict:
-    """MAE / RMSE / SAE / R² (전체 평균 + 22종 개별) 계산 후 dict 반환."""
+def evaluate(
+    model: nn.Module,
+    loader: DataLoader,
+    model_name: str,
+    device: torch.device,
+    cls_threshold: float | None = None,
+) -> dict:
+    """MAE / RMSE / SAE / R² (전체 평균 + 22종 개별) 계산 후 dict 반환.
+
+    cls_threshold: None이면 현재 데이터에서 탐색 (val loop용).
+                   float이면 그 값을 그대로 사용 (freeze — test/final eval용).
+    """
     model.eval()
 
     all_pred, all_true, all_on_off, all_valid = [], [], [], []
@@ -233,18 +253,22 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     f1_cls = None
     best_cls_threshold = 0.0
     if has_cls:
-        # val 기준 전역 임계값 최적화 (고정 0.5 대신)
-        lo_v = logit_arr[valid_mask]   # 1-D: valid (sample, class) 쌍
-        best_thr, best_f = 0.0, -1.0
-        for _thr in np.arange(-1.5, 1.6, 0.1):
-            _p  = lo_v >= _thr
-            _tp = float((_p & t_on).sum())
-            _fp = float((_p & ~t_on).sum())
-            _fn = float((~_p & t_on).sum())
-            _f  = 2 * _tp / (2 * _tp + _fp + _fn + 1e-8)
-            if _f > best_f:
-                best_f, best_thr = _f, float(_thr)
-        best_cls_threshold = best_thr
+        lo_v = logit_arr[valid_mask]
+        if cls_threshold is None:
+            # 현재 데이터에서 최적 임계값 탐색 (val loop 전용)
+            best_thr, best_f = 0.0, -1.0
+            for _thr in np.arange(-1.5, 1.6, 0.1):
+                _p  = lo_v >= _thr
+                _tp = float((_p & t_on).sum())
+                _fp = float((_p & ~t_on).sum())
+                _fn = float((~_p & t_on).sum())
+                _f  = 2 * _tp / (2 * _tp + _fp + _fn + 1e-8)
+                if _f > best_f:
+                    best_f, best_thr = _f, float(_thr)
+            best_cls_threshold = best_thr
+        else:
+            # val에서 구한 임계값을 freeze해서 사용 (test/final eval 누설 방지)
+            best_cls_threshold = cls_threshold
         pred_on_cls = logit_arr >= best_cls_threshold  # (N, 22) — per-class F1에서 재사용
         pc_on = pred_on_cls[valid_mask]
         tp_c  = float((pc_on & t_on).sum())
@@ -434,8 +458,10 @@ def main():
                                  event_context=event_context, steady_stride=steady_stride)
 
     if args.model == "cnn_tda":
-        train_ds = _NILMDatasetWithTDA(base_train, cache_dir=cache_dir)
-        val_ds   = _NILMDatasetWithTDA(base_val,   cache_dir=cache_dir)
+        train_ds = _NILMDatasetWithTDA(base_train, cache_dir=cache_dir,
+                                       event_context=event_context, steady_stride=steady_stride)
+        val_ds   = _NILMDatasetWithTDA(base_val,   cache_dir=cache_dir,
+                                       event_context=event_context, steady_stride=steady_stride)
     else:
         train_ds, val_ds = base_train, base_val
 
@@ -452,7 +478,9 @@ def main():
     if resume_exp:
         prev_ckpt = ckpt_dir / f"{resume_exp}_{args.model}.pt"
         if prev_ckpt.exists():
-            model.load_state_dict(torch.load(prev_ckpt, map_location=device, weights_only=True))
+            _ckpt = torch.load(prev_ckpt, map_location=device, weights_only=True)
+            _state = _ckpt["model_state"] if isinstance(_ckpt, dict) and "model_state" in _ckpt else _ckpt
+            model.load_state_dict(_state)
             print(f"  └─ 모델 로드: {prev_ckpt.name}")
         else:
             print(f"  └─ 경고: {prev_ckpt.name} 없음 — 처음부터 학습")
@@ -500,9 +528,12 @@ def main():
     # ── 학습 루프 ────────────────────────────────────────────────────────────
     amp_scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
 
-    best_val_mae = float("inf")
-    best_state   = None
-    no_improve   = 0
+    # (f1_cls, -mae) 튜플 우선순위 — 단위 차이 없이 Pareto 우선순위로 비교
+    best_score         = (-float("inf"), float("inf"))
+    best_val_mae       = float("inf")
+    best_cls_threshold = 0.0
+    best_state         = None
+    no_improve         = 0
     epoch_times: list[float] = []
     t_train_start = time.perf_counter()
 
@@ -541,14 +572,18 @@ def main():
                 mlflow_metrics["best_cls_threshold"] = val_metrics["best_cls_threshold"]
             mlflow.log_metrics(mlflow_metrics, step=epoch)
 
-        if val_mae < best_val_mae - 1e-4:
-            best_val_mae = val_mae
-            best_state   = {k: v.cpu().clone() for k, v in model.state_dict().items()}
-            no_improve   = 0
+        _f1_cls = val_metrics.get("f1_cls") or 0.0
+        _score  = (_f1_cls, -val_mae)
+        if _score > best_score or best_state is None:
+            best_score         = _score
+            best_val_mae       = val_mae
+            best_cls_threshold = val_metrics["best_cls_threshold"]
+            best_state         = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            no_improve         = 0
         else:
             no_improve += 1
             if no_improve >= patience:
-                print(f"  조기 종료: {patience} epoch 동안 val_mae 개선 없음")
+                print(f"  조기 종료: {patience} epoch 동안 (f1_cls, -mae) 개선 없음")
                 break
 
     training_time_s = time.perf_counter() - t_train_start
@@ -560,20 +595,22 @@ def main():
         model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
 
     ckpt_path = ckpt_dir / f"{args.exp}_{args.model}.pt"
-    torch.save(model.state_dict(), ckpt_path)
-    print(f"  체크포인트 저장: {ckpt_path.relative_to(_NILM_ROOT)}")
+    torch.save({"model_state": model.state_dict(), "best_cls_threshold": best_cls_threshold}, ckpt_path)
+    print(f"  체크포인트 저장: {ckpt_path.relative_to(_NILM_ROOT)}  (best_cls_thr={best_cls_threshold:+.2f})")
 
     if base_train.scaler is not None:
         scaler_path = ckpt_dir / f"{args.exp}_{args.model}_scaler.json"
         base_train.scaler.save(scaler_path)
 
-    final_metrics = evaluate(model, val_loader, args.model, device)
+    final_metrics = evaluate(model, val_loader, args.model, device,
+                             cls_threshold=best_cls_threshold)
     final_metrics["exp"]             = args.exp
     final_metrics["model"]           = args.model
     final_metrics["date_range"]      = list(train_date_range) if train_date_range else f"week={train_week}"
     final_metrics["training_time_s"] = round(training_time_s, 1)
     final_metrics["avg_epoch_s"]     = round(avg_epoch_s, 1)
     final_metrics["n_epochs"]        = len(epoch_times)
+    final_metrics["final_lr"]        = optimizer.param_groups[0]["lr"]   # EXP resume 시 이어받기용
 
     results_dir = _NILM_ROOT / "docs" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
@@ -602,9 +639,11 @@ def main():
 
     if mlflow_run:
         import mlflow
-        mlflow.log_metrics(
-            {"best_val_mae": final_metrics["mae"], "best_val_f1": final_metrics["f1"]}
-        )
+        _mlflow_final = {"best_val_mae": final_metrics["mae"], "best_val_f1": final_metrics["f1"]}
+        if final_metrics.get("f1_cls") is not None:
+            _mlflow_final["best_val_f1_cls"]      = final_metrics["f1_cls"]
+            _mlflow_final["best_cls_threshold"]    = final_metrics["best_cls_threshold"]
+        mlflow.log_metrics(_mlflow_final)
         if _pa:
             pa_mlflow = {}
             for name, m in _pa.items():
@@ -616,7 +655,11 @@ def main():
                 mlflow.log_metrics(pa_mlflow)
         mlflow.end_run()
 
-    print(f"\n[완료] {args.exp}/{args.model}  MAE={final_metrics['mae']:.4f}  RMSE={final_metrics['rmse']:.4f}  SAE={final_metrics['sae']:.4f}  F1={final_metrics['f1']:.3f}")
+    _cls_summary = (
+        f"  F1_cls={final_metrics['f1_cls']:.3f}(thr={final_metrics['best_cls_threshold']:+.1f})"
+        if final_metrics.get("f1_cls") is not None else ""
+    )
+    print(f"\n[완료] {args.exp}/{args.model}  MAE={final_metrics['mae']:.4f}  RMSE={final_metrics['rmse']:.4f}  SAE={final_metrics['sae']:.4f}  F1={final_metrics['f1']:.3f}{_cls_summary}")
     return final_metrics
 
 
@@ -634,12 +677,14 @@ def _fill_md_row(exp: str, model: str, metrics: dict, results_dir: Path) -> None
     # 교체: | seq2point | 45.23 | 67.89 | 0.1234 | 0.821 | ✅ |
     import re
     pattern = rf"(\| {re.escape(model)} \|).*"
+    _f1_cls_str = f"{metrics['f1_cls']:.3f}" if metrics.get("f1_cls") is not None else "—"
     replacement = (
         f"| {model} "
         f"| {metrics['mae']:.2f} "
         f"| {metrics['rmse']:.2f} "
         f"| {metrics['sae']:.4f} "
         f"| {metrics['f1']:.3f} "
+        f"| {_f1_cls_str} "
         f"| ✅ |"
     )
     new_content, n = re.subn(pattern, replacement, content)

@@ -355,10 +355,11 @@ class NILMDataset(Dataset):
 
         if _per_app_ctx is not None:
             _ratio = total_steady_windows / total_event_windows if total_event_windows > 0 else float("inf")
+            _ratio_warn = "  ⚠️  OFF 부족 (< 0.5) — BCE ON 편향 위험. steady_stride 축소 검토" if _ratio < 0.5 else ""
             print(
                 f"[NILMDataset] event_context=per-appliance(cap={event_context})  steady_stride={_ss}  전환점={total_transitions:,}\n"
                 f"  이벤트 윈도우={total_event_windows:,} / 정상 전용={total_steady_windows:,}"
-                f"  → 비율 1:{_ratio:.1f}\n"
+                f"  → 비율 1:{_ratio:.1f}{_ratio_warn}\n"
                 f"  총 {len(self._window_index):,} windows"
             )
             _log_on_window_counts(self._window_index, self._segments, window_size)
