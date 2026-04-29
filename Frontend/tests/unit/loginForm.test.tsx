@@ -23,7 +23,7 @@ describe("LoginForm", () => {
   it("invalid email shows zod error", async () => {
     renderForm();
     await userEvent.type(screen.getByLabelText("이메일"), "not-an-email");
-    await userEvent.type(screen.getByLabelText("비밀번호"), "password123");
+    await userEvent.type(screen.getByLabelText("비밀번호"), "nilm-mock-2026!");
     await userEvent.click(screen.getByRole("button", { name: "로그인" }));
     expect(await screen.findByText("올바른 이메일 형식이 아닙니다")).toBeInTheDocument();
   });
@@ -39,7 +39,7 @@ describe("LoginForm", () => {
   it("successful login sets user and redirects to /home (no from)", async () => {
     renderForm();
     await userEvent.type(screen.getByLabelText("이메일"), "test@example.com");
-    await userEvent.type(screen.getByLabelText("비밀번호"), "password123");
+    await userEvent.type(screen.getByLabelText("비밀번호"), "nilm-mock-2026!");
     await userEvent.click(screen.getByRole("button", { name: "로그인" }));
     await waitFor(() => expect(screen.getByText("HOME")).toBeInTheDocument());
     expect(useAuth.getState().user).toMatchObject({ email: "test@example.com" });
@@ -48,7 +48,7 @@ describe("LoginForm", () => {
   it("successful login redirects to ?from when present", async () => {
     renderForm("/auth/login?from=/usage");
     await userEvent.type(screen.getByLabelText("이메일"), "test@example.com");
-    await userEvent.type(screen.getByLabelText("비밀번호"), "password123");
+    await userEvent.type(screen.getByLabelText("비밀번호"), "nilm-mock-2026!");
     await userEvent.click(screen.getByRole("button", { name: "로그인" }));
     await waitFor(() => expect(screen.getByText("USAGE")).toBeInTheDocument());
   });
