@@ -1,5 +1,6 @@
 import { HttpResponse, delay, http } from "msw";
 import { mockDashboardSummary } from "./dashboardData";
+import { mockUsageAnalysis } from "./usageData";
 
 const VALID_EMAIL = "test@example.com";
 const VALID_PASSWORD = "nilm-mock-2026!";
@@ -68,5 +69,10 @@ export const handlers = [
     // 300ms delay — dev 시연 시 skeleton UI 자연스럽게 노출. 실 백엔드 응답 시간 시뮬.
     await delay(300);
     return HttpResponse.json(mockDashboardSummary);
+  }),
+
+  http.get("/api/usage/analysis", async () => {
+    await delay(300);
+    return HttpResponse.json(mockUsageAnalysis);
   }),
 ];

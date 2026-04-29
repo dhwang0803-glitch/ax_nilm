@@ -1,5 +1,5 @@
+import { MonthlyBarChart } from "../../../components/charts/MonthlyBarChart";
 import type { MonthlyData } from "../types";
-import { MonthlyBarChart } from "./MonthlyBarChart";
 
 type Props = { data: MonthlyData };
 

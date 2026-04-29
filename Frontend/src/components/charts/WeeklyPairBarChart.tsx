@@ -2,28 +2,31 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { CHART_COLORS } from "../../../lib/chart-colors";
-import type { MonthlyEntry } from "../types";
+import { CHART_COLORS } from "../../lib/chart-colors";
+
+export type WeeklyPairDatum = {
+  day: string;
+  thisWeek: number;
+  prevWeek: number;
+};
 
 type Props = {
-  data: MonthlyEntry[];
-  currentMonth: number;
+  data: WeeklyPairDatum[];
   height?: number;
 };
 
-export function MonthlyBarChart({ data, currentMonth, height = 180 }: Props) {
+export function WeeklyPairBarChart({ data, height = 200 }: Props) {
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 16, right: 0, bottom: 0, left: -16 }}>
         <CartesianGrid stroke={CHART_COLORS.grid} vertical={false} />
         <XAxis
-          dataKey="month"
+          dataKey="day"
           tick={{ fill: CHART_COLORS.axis, fontSize: 11 }}
           axisLine={{ stroke: CHART_COLORS.line }}
           tickLine={false}
@@ -41,14 +44,8 @@ export function MonthlyBarChart({ data, currentMonth, height = 180 }: Props) {
             fontSize: 12,
           }}
         />
-        <Bar dataKey="kwh">
-          {data.map((d) => (
-            <Cell
-              key={d.month}
-              fill={d.month === currentMonth ? CHART_COLORS.highlight : CHART_COLORS.main}
-            />
-          ))}
-        </Bar>
+        <Bar dataKey="prevWeek" name="지난 주" fill={CHART_COLORS.muted} />
+        <Bar dataKey="thisWeek" name="이번 주" fill={CHART_COLORS.main} />
       </BarChart>
     </ResponsiveContainer>
   );
