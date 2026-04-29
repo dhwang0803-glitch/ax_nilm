@@ -81,18 +81,19 @@ def write_md_report(
         "",
         "## 전체 성능 비교",
         "",
-        "| 모델 | MAE (W) | RMSE (W) | SAE | F1 |",
-        "|------|---------|----------|-----|----|",
+        "| 모델 | MAE (W) | RMSE (W) | SAE | F1 | F1_cls | 완료 |",
+        "|------|---------|----------|-----|----|----|------|",
     ]
 
     for model in MODELS:
         m = all_metrics.get(model)
         if m:
+            _f1_cls = f"{m['f1_cls']:.3f}" if m.get("f1_cls") is not None else "—"
             lines.append(
-                f"| {model} | {m['mae']:.2f} | {m['rmse']:.2f} | {m['sae']:.4f} | {m['f1']:.3f} |"
+                f"| {model} | {m['mae']:.2f} | {m['rmse']:.2f} | {m['sae']:.4f} | {m['f1']:.3f} | {_f1_cls} | ✅ |"
             )
         else:
-            lines.append(f"| {model} | — | — | — | — |")
+            lines.append(f"| {model} | — | — | — | — | — | ⬜ |")
 
     lines += ["", "---", "", "## 이전 EXP 대비 개선율 (Val MAE 기준)"]
 
