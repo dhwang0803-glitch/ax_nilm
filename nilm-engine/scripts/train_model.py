@@ -99,19 +99,23 @@ def masked_weighted_mse(
     on_off: torch.Tensor,
     validity: torch.Tensor,
     on_weight: float = 5.0,
+    appliance_scale: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """validity=False 채널 제외. ON 구간은 on_weight 배 가중해 trivial zero 예측 방지."""
+    """validity=False 채널 제외. ON 구간은 on_weight 배, 가전별 scale 추가 적용."""
     weight = validity.float() * (1.0 + (on_weight - 1.0) * on_off.float())
+    if appliance_scale is not None:
+        weight = weight * appliance_scale.unsqueeze(0)
     diff = (pred - target) ** 2 * weight
     denom = weight.sum().clamp(min=1.0)
     return diff.sum() / denom
 
 
-def compute_pos_weight(loader: DataLoader, device: torch.device) -> torch.Tensor:
+def compute_pos_weight(loader: DataLoader, device: torch.device, max_weight: float = 20.0) -> torch.Tensor:
     """학습 데이터 ON/OFF 분포에서 per-channel pos_weight 계산.
 
-    sqrt scaling + clamp(max=20)으로 발산 방지 (리뷰 1번).
+    sqrt scaling + clamp(max=max_weight)으로 발산 방지.
     분모 floor=10 — ON 샘플 < 10인 채널은 임계 낮춤.
+    max_weight: train.yaml training.pos_weight_max 로 제어 (기본 20 → 희귀 가전은 50 권장).
     """
     on_counts  = torch.zeros(N_APPLIANCES)
     off_counts = torch.zeros(N_APPLIANCES)
@@ -126,7 +130,7 @@ def compute_pos_weight(loader: DataLoader, device: torch.device) -> torch.Tensor
         off_counts += ((1.0 - mask) * valid).sum(0).cpu()
 
     total_counts = on_counts + off_counts
-    pw = torch.sqrt(off_counts / on_counts.clamp(min=10)).clamp(max=20.0)
+    pw = torch.sqrt(off_counts / on_counts.clamp(min=10)).clamp(max=max_weight)
     # validity=0 for all windows → off_counts=0 → sqrt(0)=0 → ON 샘플에 weight 0 적용 방지
     pw = torch.where(total_counts == 0, torch.ones_like(pw), pw)
     return pw.to(device)
@@ -283,6 +287,7 @@ def train_one_epoch(
     amp_scaler: torch.cuda.amp.GradScaler | None = None,
     pos_weight: torch.Tensor | None = None,
     lambda_mse: float = 0.1,
+    appliance_scale: torch.Tensor | None = None,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -312,7 +317,8 @@ def train_one_epoch(
             on_off_c = on_off[:, :, center].to(device)
             validity = validity.to(device)
 
-            mse_loss = masked_weighted_mse(pred, target_c, on_off_c, validity)
+            mse_loss = masked_weighted_mse(pred, target_c, on_off_c, validity,
+                                           appliance_scale=appliance_scale)
 
             if cnn_logit is not None and pos_weight is not None:
                 # dual head BCE — gate collapse 방지 (리뷰 2번)
@@ -462,11 +468,21 @@ def main():
         except Exception as e:
             print(f"  MLflow 스킵: {e}")
 
+    # ── per-appliance loss scale (구조 C) ────────────────────────────────────
+    _app_index = {name: i for i, name in enumerate(APPLIANCE_LABELS)}
+    _scale_cfg = train_cfg.get("appliance_loss_scale", {})
+    appliance_scale = torch.ones(N_APPLIANCES, device=device)
+    for _name, _s in _scale_cfg.items():
+        if _name in _app_index:
+            appliance_scale[_app_index[_name]] = float(_s)
+            print(f"  appliance_loss_scale [{_name}]: ×{_s}")
+
     # ── pos_weight 계산 (cnn_tda 전용) ──────────────────────────────────────
+    pos_weight_max = float(train_cfg["training"].get("pos_weight_max", 20.0))
     pos_weight = None
     if args.model == "cnn_tda":
         print("  pos_weight 계산 중...")
-        pos_weight = compute_pos_weight(train_loader, device)
+        pos_weight = compute_pos_weight(train_loader, device, max_weight=pos_weight_max)
         for name, pw in zip(APPLIANCE_LABELS, pos_weight.cpu().tolist()):
             print(f"    {name}: {pw:.2f}")
 
@@ -482,7 +498,8 @@ def main():
     for epoch in range(1, epochs + 1):
         t_epoch = time.perf_counter()
         train_loss = train_one_epoch(model, train_loader, optimizer, args.model, device,
-                                      amp_scaler, pos_weight=pos_weight)
+                                      amp_scaler, pos_weight=pos_weight,
+                                      appliance_scale=appliance_scale)
         epoch_times.append(time.perf_counter() - t_epoch)
 
         val_metrics = evaluate(model, val_loader, args.model, device)
@@ -557,11 +574,35 @@ def main():
     # MD 보고서 해당 행 업데이트
     _fill_md_row(args.exp, args.model, final_metrics, results_dir)
 
+    # ── per-appliance RMSE 요약 출력 (문제 5) ──────────────────────────────
+    _pa = final_metrics.get("per_appliance", {})
+    if _pa:
+        print("\n  [per-appliance RMSE 요약]")
+        _rows = [
+            (name, m["rmse"], m["mae"])
+            for name, m in _pa.items()
+            if m.get("rmse") is not None and m.get("mae") is not None
+        ]
+        _rows.sort(key=lambda x: -(x[1] / max(x[2], 1e-8)))
+        for name, rmse, mae in _rows:
+            ratio = rmse / max(mae, 1e-8)
+            flag = "  ⚠️" if ratio > 2.0 else ""
+            print(f"    {name}: RMSE={rmse:.1f}W  MAE={mae:.1f}W  ({ratio:.1f}x){flag}")
+
     if mlflow_run:
         import mlflow
         mlflow.log_metrics(
             {"best_val_mae": final_metrics["mae"], "best_val_f1": final_metrics["f1"]}
         )
+        if _pa:
+            pa_mlflow = {}
+            for name, m in _pa.items():
+                if m.get("rmse") is not None:
+                    pa_mlflow[f"final_rmse_{name}"] = m["rmse"]
+                if m.get("mae") is not None:
+                    pa_mlflow[f"final_mae_{name}"] = m["mae"]
+            if pa_mlflow:
+                mlflow.log_metrics(pa_mlflow)
         mlflow.end_run()
 
     print(f"\n[완료] {args.exp}/{args.model}  MAE={final_metrics['mae']:.4f}  RMSE={final_metrics['rmse']:.4f}  SAE={final_metrics['sae']:.4f}  F1={final_metrics['f1']:.3f}")
