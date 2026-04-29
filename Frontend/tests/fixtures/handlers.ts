@@ -1,4 +1,5 @@
 import { HttpResponse, http } from "msw";
+import { mockDashboardSummary } from "./dashboardData";
 
 const VALID_EMAIL = "test@example.com";
 const VALID_PASSWORD = "nilm-mock-2026!";
@@ -61,5 +62,9 @@ export const handlers = [
         name: `${provider} 사용자`,
       },
     });
+  }),
+
+  http.get("/api/dashboard/summary", () => {
+    return HttpResponse.json(mockDashboardSummary);
   }),
 ];
