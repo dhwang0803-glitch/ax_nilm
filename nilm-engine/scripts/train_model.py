@@ -125,7 +125,10 @@ def compute_pos_weight(loader: DataLoader, device: torch.device) -> torch.Tensor
         on_counts  += (mask * valid).sum(0).cpu()
         off_counts += ((1.0 - mask) * valid).sum(0).cpu()
 
+    total_counts = on_counts + off_counts
     pw = torch.sqrt(off_counts / on_counts.clamp(min=10)).clamp(max=20.0)
+    # validity=0 for all windows → off_counts=0 → sqrt(0)=0 → ON 샘플에 weight 0 적용 방지
+    pw = torch.where(total_counts == 0, torch.ones_like(pw), pw)
     return pw.to(device)
 
 
@@ -194,8 +197,7 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     # cls 헤드 사용 가능 시 logit 기반 F1도 계산
     has_cls = len(all_fusion_logit) > 0
     if has_cls:
-        logit_arr  = np.concatenate(all_fusion_logit, axis=0)
-        pred_on_cls = logit_arr >= 0.0   # sigmoid >= 0.5
+        logit_arr = np.concatenate(all_fusion_logit, axis=0)
 
     valid_mask = valid_arr > 0
     p    = pred_arr[valid_mask]
@@ -214,7 +216,21 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
     f1   = 2 * tp / (2 * tp + fp + fn + 1e-8)
 
     f1_cls = None
+    best_cls_threshold = 0.0
     if has_cls:
+        # val 기준 전역 임계값 최적화 (고정 0.5 대신)
+        lo_v = logit_arr[valid_mask]   # 1-D: valid (sample, class) 쌍
+        best_thr, best_f = 0.0, -1.0
+        for _thr in np.arange(-1.5, 1.6, 0.1):
+            _p  = lo_v >= _thr
+            _tp = float((_p & t_on).sum())
+            _fp = float((_p & ~t_on).sum())
+            _fn = float((~_p & t_on).sum())
+            _f  = 2 * _tp / (2 * _tp + _fp + _fn + 1e-8)
+            if _f > best_f:
+                best_f, best_thr = _f, float(_thr)
+        best_cls_threshold = best_thr
+        pred_on_cls = logit_arr >= best_cls_threshold  # (N, 22) — per-class F1에서 재사용
         pc_on = pred_on_cls[valid_mask]
         tp_c  = float((pc_on & t_on).sum())
         fp_c  = float((pc_on & ~t_on).sum())
@@ -251,6 +267,7 @@ def evaluate(model: nn.Module, loader: DataLoader, model_name: str, device: torc
 
     return {"mae": mae, "rmse": rmse, "sae": sae,
             "f1": f1, "f1_cls": f1_cls,
+            "best_cls_threshold": best_cls_threshold,
             "per_appliance": per_appliance}
 
 
@@ -475,6 +492,7 @@ def main():
         lr_now = optimizer.param_groups[0]["lr"]
 
         f1_cls_str = (f"  val_f1_cls={val_metrics['f1_cls']:.3f}"
+                      f"(thr={val_metrics['best_cls_threshold']:+.1f})"
                       if val_metrics.get("f1_cls") is not None else "")
         print(
             f"  epoch {epoch:3d}/{epochs}  "
@@ -485,12 +503,15 @@ def main():
 
         if mlflow_run:
             import mlflow
-            mlflow.log_metrics(
-                {"train_loss": train_loss, "val_mae": val_mae,
-                 "val_f1": val_metrics["f1"], "val_rmse": val_metrics["rmse"],
-                 "epoch_time_s": epoch_times[-1]},
-                step=epoch,
-            )
+            mlflow_metrics = {
+                "train_loss": train_loss, "val_mae": val_mae,
+                "val_f1": val_metrics["f1"], "val_rmse": val_metrics["rmse"],
+                "epoch_time_s": epoch_times[-1],
+            }
+            if val_metrics.get("f1_cls") is not None:
+                mlflow_metrics["val_f1_cls"] = val_metrics["f1_cls"]
+                mlflow_metrics["best_cls_threshold"] = val_metrics["best_cls_threshold"]
+            mlflow.log_metrics(mlflow_metrics, step=epoch)
 
         if val_mae < best_val_mae - 1e-4:
             best_val_mae = val_mae
