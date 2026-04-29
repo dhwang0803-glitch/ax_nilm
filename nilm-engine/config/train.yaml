@@ -3,7 +3,9 @@ training:
   batch_size: 256        # seq2point, cnn_tda 기본값
   batch_size_bert: 64   # bert4nilm: window=1024 quadratic attention 메모리 제약
   learning_rate: 0.001
+  resume_lr_factor: 0.2   # resume 시 LR 배율 (0.001 × 0.2 = 0.0002)
   early_stopping_patience: 5
+  pos_weight_max: 50        # pos_weight clamp 상한 (기존 20 → 희귀 이벤트 가전 커버)
   loss_weights:
     mse: 0.0001  # lambda_mse — raw W 타깃 기준 (MSE~40000W² → 4.0 수준으로 BCE와 균형)
     bce: 1.0     # cnn_tda ON/OFF 분류 로짓 BCE 가중치
@@ -40,3 +42,7 @@ eval:
 
 # 포화점 판단 기준: 이전 EXP 대비 Val MAE 개선율 < 이 값이면 포화로 판단
 saturation_threshold: 0.05   # 5%
+
+# 가전별 MSE loss 스케일 (1.0 = 기본, >1.0 = 해당 가전 오차 더 강하게 패널티)
+appliance_loss_scale:
+  "인덕션(전기레인지)": 2.0  # RMSE 247~325W — 절대전력 최고 → loss 강화
