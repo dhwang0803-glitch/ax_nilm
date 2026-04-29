@@ -290,9 +290,15 @@ def main() -> None:
     else:
         model = CNNTDAHybrid(window_size=window_size)
 
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
+    _ckpt = torch.load(args.checkpoint, map_location=device, weights_only=True)
+    if isinstance(_ckpt, dict) and "model_state" in _ckpt:
+        model.load_state_dict(_ckpt["model_state"])
+        _saved_thr = _ckpt.get("best_cls_threshold", 0.0)
+        print(f"  체크포인트 로드: {args.checkpoint}  (best_cls_thr={_saved_thr:+.2f})")
+    else:
+        model.load_state_dict(_ckpt)
+        print(f"  체크포인트 로드: {args.checkpoint}")
     model.to(device)
-    print(f"  체크포인트 로드: {args.checkpoint}")
 
     t0 = time.perf_counter()
     pred_arr, true_arr, on_off_arr, valid_arr = run_inference(
