@@ -1,7 +1,7 @@
 import { HttpResponse, http } from "msw";
 
 const VALID_EMAIL = "test@example.com";
-const VALID_PASSWORD = "password123";
+const VALID_PASSWORD = "nilm-mock-2026!";
 const TAKEN_EMAIL = "taken@test.com";
 
 type LoginBody = { email: string; password: string };

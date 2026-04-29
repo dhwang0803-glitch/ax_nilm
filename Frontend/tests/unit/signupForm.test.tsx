@@ -22,7 +22,7 @@ describe("SignupForm", () => {
   it("password mismatch shows error", async () => {
     renderForm();
     await userEvent.type(screen.getByLabelText("이메일"), "new@example.com");
-    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "password123");
+    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "nilm-mock-2026!");
     await userEvent.type(screen.getByLabelText("비밀번호 확인"), "different1");
     await userEvent.type(screen.getByLabelText("이름"), "새 사용자");
     await userEvent.click(screen.getByLabelText("나중에 하기"));
@@ -34,8 +34,8 @@ describe("SignupForm", () => {
   it("agreeTerms unchecked blocks submit", async () => {
     renderForm();
     await userEvent.type(screen.getByLabelText("이메일"), "new@example.com");
-    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "password123");
-    await userEvent.type(screen.getByLabelText("비밀번호 확인"), "password123");
+    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "nilm-mock-2026!");
+    await userEvent.type(screen.getByLabelText("비밀번호 확인"), "nilm-mock-2026!");
     await userEvent.type(screen.getByLabelText("이름"), "새 사용자");
     await userEvent.click(screen.getByLabelText("나중에 하기"));
     await userEvent.click(screen.getByRole("button", { name: "회원가입" }));
@@ -45,8 +45,8 @@ describe("SignupForm", () => {
   it("skipKepco=true skips KEPCO validation and signs up", async () => {
     renderForm();
     await userEvent.type(screen.getByLabelText("이메일"), "fresh@example.com");
-    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "password123");
-    await userEvent.type(screen.getByLabelText("비밀번호 확인"), "password123");
+    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "nilm-mock-2026!");
+    await userEvent.type(screen.getByLabelText("비밀번호 확인"), "nilm-mock-2026!");
     await userEvent.type(screen.getByLabelText("이름"), "테스터");
     await userEvent.click(screen.getByLabelText("나중에 하기"));
     await userEvent.click(screen.getByLabelText(/이용약관/));
@@ -58,8 +58,8 @@ describe("SignupForm", () => {
   it("422 email taken shows server error", async () => {
     renderForm();
     await userEvent.type(screen.getByLabelText("이메일"), "taken@test.com");
-    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "password123");
-    await userEvent.type(screen.getByLabelText("비밀번호 확인"), "password123");
+    await userEvent.type(screen.getByLabelText("비밀번호", { exact: true }), "nilm-mock-2026!");
+    await userEvent.type(screen.getByLabelText("비밀번호 확인"), "nilm-mock-2026!");
     await userEvent.type(screen.getByLabelText("이름"), "테스터");
     await userEvent.click(screen.getByLabelText("나중에 하기"));
     await userEvent.click(screen.getByLabelText(/이용약관/));
