@@ -15,8 +15,8 @@ PLAN_{NN}_{도메인}.md
 
 | Phase | 도메인 | 상태 | 비고 |
 |---|---|---|---|
-| 00 | bootstrap | **작성 완료** | Vite 스캐폴드 + 7 라우트 placeholder + Sidebar/Topbar + AuthGuard 골격 |
-| 01 | landing | 미작성 | `/` 비로그인 진입점 (디자인 변형 B) |
+| 00 | bootstrap | **구현 완료** (PR #37 머지) | Vite 스캐폴드 + 7 라우트 placeholder + Sidebar/Topbar + AuthGuard 골격 |
+| 01 | landing | **작성 완료** | `/` 비로그인 진입점 (디자인 변형 B — PubNav + Hero + WhySection) |
 | 02 | auth | 미작성 | OAuth 2.0 / JWT httpOnly 쿠키 (변형 A) |
 | 03 | dashboard | 미작성 | 분석형 (변형 C: 좌 차트 + 우 KPI) |
 | 04 | usage | 미작성 | 종합 분석 (변형 A: 가전별 분해 + 24h 라인) |

@@ -1,3 +1,24 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  .placeholder-img {
+    background: repeating-linear-gradient(
+      45deg,
+      var(--fill-1),
+      var(--fill-1) 8px,
+      var(--fill-2) 8px,
+      var(--fill-2) 16px
+    );
+    border: 1px solid var(--line-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+}
