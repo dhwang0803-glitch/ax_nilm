@@ -1,5 +1,5 @@
+import { WeeklyPairBarChart } from "../../../components/charts/WeeklyPairBarChart";
 import type { WeeklyData } from "../types";
-import { WeeklyPairBarChart } from "./WeeklyPairBarChart";
 
 type Props = { data: WeeklyData };
 
