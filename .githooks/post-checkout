@@ -28,7 +28,10 @@ BRANCH_CHECKOUT=$3
 # 기존 브랜치 checkout(커밋이 다름)은 스캐폴딩 불필요 → 즉시 종료
 [ "$PREV_HEAD" != "$NEW_HEAD" ] && exit 0
 
-PREV_BRANCH=$(git name-rev --name-only "$PREV_HEAD" 2>/dev/null | sed 's/~.*//')
+# `git checkout -b X` 시점에 X ref 가 이미 PREV_HEAD 커밋을 가리키고 있어
+# `git name-rev "$PREV_HEAD"` 가 새 브랜치 X 를 반환할 수 있다 (ref ambiguity 버그).
+# `@{-1}` 은 git 이 명시적으로 추적하는 "직전 체크아웃 브랜치" (= `git checkout -` 가 쓰는 ref).
+PREV_BRANCH=$(git rev-parse --abbrev-ref @{-1} 2>/dev/null)
 CURR_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null)
 [ "$PREV_BRANCH" = "$CURR_BRANCH" ] && exit 0
 
