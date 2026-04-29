@@ -1,4 +1,4 @@
-import { HttpResponse, http } from "msw";
+import { HttpResponse, delay, http } from "msw";
 import { mockDashboardSummary } from "./dashboardData";
 
 const VALID_EMAIL = "test@example.com";
@@ -64,7 +64,9 @@ export const handlers = [
     });
   }),
 
-  http.get("/api/dashboard/summary", () => {
+  http.get("/api/dashboard/summary", async () => {
+    // 300ms delay — dev 시연 시 skeleton UI 자연스럽게 노출. 실 백엔드 응답 시간 시뮬.
+    await delay(300);
     return HttpResponse.json(mockDashboardSummary);
   }),
 ];
