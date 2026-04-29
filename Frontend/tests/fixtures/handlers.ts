@@ -1,4 +1,5 @@
 import { HttpResponse, delay, http } from "msw";
+import { mockCashbackTracker } from "./cashbackData";
 import { mockDashboardSummary } from "./dashboardData";
 import { mockUsageAnalysis } from "./usageData";
 
@@ -74,5 +75,10 @@ export const handlers = [
   http.get("/api/usage/analysis", async () => {
     await delay(300);
     return HttpResponse.json(mockUsageAnalysis);
+  }),
+
+  http.get("/api/cashback/tracker", async () => {
+    await delay(300);
+    return HttpResponse.json(mockCashbackTracker);
   }),
 ];
