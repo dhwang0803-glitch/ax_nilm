@@ -179,12 +179,12 @@ def evaluate(
     loader: DataLoader,
     model_name: str,
     device: torch.device,
-    cls_threshold: float | None = None,
+    cls_thresholds: np.ndarray | None = None,
 ) -> dict:
     """MAE / RMSE / SAE / R² (전체 평균 + 22종 개별) 계산 후 dict 반환.
 
-    cls_threshold: None이면 현재 데이터에서 탐색 (val loop용).
-                   float이면 그 값을 그대로 사용 (freeze — test/final eval용).
+    cls_thresholds: None이면 가전별 독립 탐색 (val loop용).
+                    ndarray(22,)이면 그 값을 freeze해서 사용 (test/final eval용).
     """
     model.eval()
 
@@ -251,25 +251,31 @@ def evaluate(
     f1   = 2 * tp / (2 * tp + fp + fn + 1e-8)
 
     f1_cls = None
-    best_cls_threshold = 0.0
+    best_cls_thresholds = np.zeros(N_APPLIANCES)
     if has_cls:
-        lo_v = logit_arr[valid_mask]
-        if cls_threshold is None:
-            # 현재 데이터에서 최적 임계값 탐색 (val loop 전용)
-            best_thr, best_f = 0.0, -1.0
-            for _thr in np.arange(-1.5, 1.6, 0.1):
-                _p  = lo_v >= _thr
-                _tp = float((_p & t_on).sum())
-                _fp = float((_p & ~t_on).sum())
-                _fn = float((~_p & t_on).sum())
-                _f  = 2 * _tp / (2 * _tp + _fp + _fn + 1e-8)
-                if _f > best_f:
-                    best_f, best_thr = _f, float(_thr)
-            best_cls_threshold = best_thr
+        if cls_thresholds is None:
+            # 가전별 독립 임계값 탐색 (val loop 전용) — 범위 [-3, +3]
+            _search = np.arange(-3.0, 3.1, 0.1)
+            for i in range(N_APPLIANCES):
+                col_valid = valid_arr[:, i] > 0
+                if not col_valid.any():
+                    continue
+                lo_i = logit_arr[col_valid, i]
+                ti_i = on_off_arr[col_valid, i].astype(bool)
+                best_thr_i, best_f_i = 0.0, -1.0
+                for _thr in _search:
+                    _p  = lo_i >= _thr
+                    _tp = float((_p & ti_i).sum())
+                    _fp = float((_p & ~ti_i).sum())
+                    _fn = float((~_p & ti_i).sum())
+                    _f  = 2 * _tp / (2 * _tp + _fp + _fn + 1e-8)
+                    if _f > best_f_i:
+                        best_f_i, best_thr_i = _f, float(_thr)
+                best_cls_thresholds[i] = best_thr_i
         else:
             # val에서 구한 임계값을 freeze해서 사용 (test/final eval 누설 방지)
-            best_cls_threshold = cls_threshold
-        pred_on_cls = logit_arr >= best_cls_threshold  # (N, 22) — per-class F1에서 재사용
+            best_cls_thresholds = np.asarray(cls_thresholds)
+        pred_on_cls = logit_arr >= best_cls_thresholds[np.newaxis, :]  # (N, 22)
         pc_on = pred_on_cls[valid_mask]
         tp_c  = float((pc_on & t_on).sum())
         fp_c  = float((pc_on & ~t_on).sum())
@@ -306,7 +312,7 @@ def evaluate(
 
     return {"mae": mae, "rmse": rmse, "sae": sae,
             "f1": f1, "f1_cls": f1_cls,
-            "best_cls_threshold": best_cls_threshold,
+            "best_cls_thresholds": best_cls_thresholds.tolist(),
             "per_appliance": per_appliance}
 
 
@@ -529,10 +535,10 @@ def main():
     amp_scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
 
     # (f1_cls, -mae) 튜플 우선순위 — 단위 차이 없이 Pareto 우선순위로 비교
-    best_score         = (-float("inf"), float("inf"))
-    best_val_mae       = float("inf")
-    best_cls_threshold = 0.0
-    best_state         = None
+    best_score          = (-float("inf"), float("inf"))
+    best_val_mae        = float("inf")
+    best_cls_thresholds = np.zeros(N_APPLIANCES)
+    best_state          = None
     no_improve         = 0
     epoch_times: list[float] = []
     t_train_start = time.perf_counter()
@@ -551,7 +557,6 @@ def main():
         lr_now = optimizer.param_groups[0]["lr"]
 
         f1_cls_str = (f"  val_f1_cls={val_metrics['f1_cls']:.3f}"
-                      f"(thr={val_metrics['best_cls_threshold']:+.1f})"
                       if val_metrics.get("f1_cls") is not None else "")
         print(
             f"  epoch {epoch:3d}/{epochs}  "
@@ -569,7 +574,6 @@ def main():
             }
             if val_metrics.get("f1_cls") is not None:
                 mlflow_metrics["val_f1_cls"] = val_metrics["f1_cls"]
-                mlflow_metrics["best_cls_threshold"] = val_metrics["best_cls_threshold"]
             mlflow.log_metrics(mlflow_metrics, step=epoch)
 
         _f1_cls = val_metrics.get("f1_cls") or 0.0
@@ -577,7 +581,7 @@ def main():
         if _score > best_score or best_state is None:
             best_score         = _score
             best_val_mae       = val_mae
-            best_cls_threshold = val_metrics["best_cls_threshold"]
+            best_cls_thresholds = np.array(val_metrics["best_cls_thresholds"])
             best_state         = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             no_improve         = 0
         else:
@@ -595,15 +599,15 @@ def main():
         model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
 
     ckpt_path = ckpt_dir / f"{args.exp}_{args.model}.pt"
-    torch.save({"model_state": model.state_dict(), "best_cls_threshold": best_cls_threshold}, ckpt_path)
-    print(f"  체크포인트 저장: {ckpt_path.relative_to(_NILM_ROOT)}  (best_cls_thr={best_cls_threshold:+.2f})")
+    torch.save({"model_state": model.state_dict(), "best_cls_thresholds": best_cls_thresholds.tolist()}, ckpt_path)
+    print(f"  체크포인트 저장: {ckpt_path.relative_to(_NILM_ROOT)}  (per-class thr 저장)")
 
     if base_train.scaler is not None:
         scaler_path = ckpt_dir / f"{args.exp}_{args.model}_scaler.json"
         base_train.scaler.save(scaler_path)
 
     final_metrics = evaluate(model, val_loader, args.model, device,
-                             cls_threshold=best_cls_threshold)
+                             cls_thresholds=best_cls_thresholds)
     final_metrics["exp"]             = args.exp
     final_metrics["model"]           = args.model
     final_metrics["date_range"]      = list(train_date_range) if train_date_range else f"week={train_week}"
@@ -641,8 +645,7 @@ def main():
         import mlflow
         _mlflow_final = {"best_val_mae": final_metrics["mae"], "best_val_f1": final_metrics["f1"]}
         if final_metrics.get("f1_cls") is not None:
-            _mlflow_final["best_val_f1_cls"]      = final_metrics["f1_cls"]
-            _mlflow_final["best_cls_threshold"]    = final_metrics["best_cls_threshold"]
+            _mlflow_final["best_val_f1_cls"] = final_metrics["f1_cls"]
         mlflow.log_metrics(_mlflow_final)
         if _pa:
             pa_mlflow = {}

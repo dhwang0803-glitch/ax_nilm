@@ -222,6 +222,9 @@ co_docs/
 datasets/
 nilm-engine/datasets/
 
+# nilm-engine 내부 작업 문서 (로컬 전용)
+nilm-engine/docs/
+
 # Secrets & credentials
 *.pem
 *.key
