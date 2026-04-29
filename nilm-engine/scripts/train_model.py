@@ -53,10 +53,21 @@ class _NILMDatasetWithTDA(Dataset):
             from features.tda import TDA_DIM
             _tda_cache = cache_dir / f"tda_{base.cache_key}_d{TDA_DIM}.pt"
 
+        _need_compute = True
         if _tda_cache is not None and _tda_cache.exists():
-            self._tda = torch.load(str(_tda_cache), weights_only=True)
-            print(f"  TDA 캐시 로드: {_tda_cache.name}  ({n:,} windows)", flush=True)
-        else:
+            _loaded = torch.load(str(_tda_cache), weights_only=True)
+            if len(_loaded) == n:
+                self._tda = _loaded
+                _need_compute = False
+                print(f"  TDA 캐시 로드: {_tda_cache.name}  ({n:,} windows)", flush=True)
+            else:
+                print(
+                    f"  TDA 캐시 크기 불일치 ({len(_loaded):,} != {n:,}) → 재계산",
+                    flush=True,
+                )
+                _tda_cache.unlink()
+
+        if _need_compute:
             print(f"  TDA 사전 계산 중... ({n:,}개)", flush=True)
             from joblib import Parallel, delayed
             signals = [base[i][0].numpy() for i in range(n)]
