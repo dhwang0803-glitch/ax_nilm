@@ -753,7 +753,7 @@ def _db_anomaly_events(conn, household_id: str, status: str) -> dict[str, Any]:
             SELECT
                 asi.id,
                 COALESCE(hc.device_name, 'ch' || LPAD(asi.channel_num::text, 2, '0')) AS device,
-                asc_.label AS status_label,
+                asc_.label_ko AS status_label,
                 asi.confidence,
                 asi.model_version,
                 asi.start_ts,
@@ -836,7 +836,7 @@ def _db_anomaly_log(
             SELECT
                 asi.id,
                 COALESCE(hc.device_name, 'ch' || LPAD(asi.channel_num::text, 2, '0')) AS device,
-                asc_.label AS status_label,
+                asc_.label_ko AS status_label,
                 asi.confidence,
                 asi.model_version,
                 asi.start_ts,
