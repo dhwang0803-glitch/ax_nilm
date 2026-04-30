@@ -1,7 +1,7 @@
 import { HttpResponse, delay, http } from "msw";
 import { mockCashbackTracker } from "./cashbackData";
 import { mockDashboardSummary } from "./dashboardData";
-import { mockAccount } from "./settingsData";
+import { mockAccount, mockNotifications } from "./settingsData";
 import { mockUsageAnalysis } from "./usageData";
 
 const VALID_EMAIL = "test@example.com";
@@ -86,5 +86,10 @@ export const handlers = [
   http.get("/api/settings/account", async () => {
     await delay(300);
     return HttpResponse.json(mockAccount);
+  }),
+
+  http.get("/api/settings/notifications", async () => {
+    await delay(300);
+    return HttpResponse.json(mockNotifications);
   }),
 ];
