@@ -16,3 +16,27 @@ export type AccountResponse = {
   profile: AccountProfile;
   kepco: AccountKepco;
 };
+
+export type NotificationKind =
+  | "anomaly"
+  | "cashback"
+  | "weeklyReport"
+  | "system";
+
+export type NotificationMatrixRow = {
+  kind: NotificationKind;
+  email: boolean;
+  sms: boolean;
+  push: boolean;
+};
+
+export type DoNotDisturb = {
+  enabled: boolean;
+  startMinutes: number;
+  endMinutes: number;
+};
+
+export type NotificationsResponse = {
+  matrix: NotificationMatrixRow[];
+  doNotDisturb: DoNotDisturb;
+};
