@@ -6,7 +6,7 @@ from collections import defaultdict
 from fastapi import APIRouter
 
 from src.agent.data_tools import get_anomaly_events, get_anomaly_log
-from src.agent.graph import AnomalyDiagnosis, InsightsLLMOutput, SavingsRec, run_insights
+from src.agent.graph import InsightsLLMOutput, run_insights
 
 router = APIRouter()
 
@@ -27,24 +27,14 @@ def _set_cache(hh: str, result: InsightsLLMOutput) -> None:
     _cache[hh] = (time.time(), result)
 
 
-# ── 폴백 (LLM 미사용 시) ─────────────────────────────────────────
+def get_or_run_insights(hh: str) -> InsightsLLMOutput:
+    """캐시에서 읽거나 없으면 LLM 호출 후 저장."""
+    cached = _get_cached(hh)
+    if cached is None:
+        cached = run_insights(hh)
+        _set_cache(hh, cached)
+    return cached
 
-def _fallback_diagnoses(events: list[dict]) -> list[dict]:
-    return [
-        {
-            "event_id": e.get("event_id", ""),
-            "diagnosis": e.get("description", ""),
-            "action": "점검 필요",
-        }
-        for e in events
-    ]
-
-
-_FALLBACK_RECS = [
-    {"title": "저녁 19–21시 대기전력 차단", "savings_kwh": 2.1, "savings_krw": 63},
-    {"title": "대기전력 멀티탭 OFF",         "savings_kwh": 0.7, "savings_krw": 21},
-    {"title": "에어컨 26 → 27°C",            "savings_kwh": 1.4, "savings_krw": 42},
-]
 
 # ── 주간 추이 빌드 ────────────────────────────────────────────────
 
@@ -74,8 +64,7 @@ def _weekly_trend(log_records: list[dict]) -> list[dict]:
 
 @router.get("/insights/summary")
 def insights_summary():
-    hh      = os.getenv("DEFAULT_HH", "HH001")
-    use_llm = os.getenv("INSIGHTS_LLM", "false").lower() == "true"
+    hh = os.getenv("DEFAULT_HH", "HH001")
 
     events_data = get_anomaly_events(hh, status="active")
     log_data    = get_anomaly_log(hh)
@@ -86,16 +75,9 @@ def insights_summary():
     total_kwh  = round(sum(e.get("excess_kwh", 0) for e in raw_events), 1)
     confidence = max((e.get("confidence", 0) for e in raw_events), default=0)
 
-    if use_llm and os.getenv("OPENAI_API_KEY"):
-        cached = _get_cached(hh)
-        if cached is None:
-            cached = run_insights(hh)
-            _set_cache(hh, cached)
-        diagnoses       = [d.model_dump() for d in cached.anomaly_diagnoses]
-        recommendations = [r.model_dump() for r in cached.recommendations]
-    else:
-        diagnoses       = _fallback_diagnoses(raw_events)
-        recommendations = _FALLBACK_RECS
+    result          = get_or_run_insights(hh)
+    diagnoses       = [d.model_dump() for d in result.anomaly_diagnoses]
+    recommendations = [r.model_dump() for r in result.recommendations]
 
     diag_map  = {d["event_id"]: d for d in diagnoses}
     anomalies = [

@@ -1,91 +1,29 @@
 import os
 from fastapi import APIRouter
-from src.agent.data_tools import get_cashback_history, get_consumption_summary, get_household_profile
-from src.api.routers.insights import _get_cached
+from src.agent.data_tools import get_cashback_history, get_consumption_summary
+from src.api.routers.insights import get_or_run_insights
 
 router = APIRouter()
 
 _DAYS = ["월", "화", "수", "목", "금", "토", "일"]
 _DAY_FACTORS = [0.88, 1.00, 0.95, 1.08, 1.05, 1.22, 0.82]
 
-# (가전명 키워드, 미션 제목, 기본 절감 kWh)
-_MISSION_RULES: list[tuple[str, str, float]] = [
-    ("에어컨",    "에어컨 설정 온도 1℃ 올리기",              0.8),
-    ("건조기",    "저온 코스 사용 (주 2회 기준)",              0.9),
-    ("냉장고",    "냉장고 온도 2단계 → 1단계",               0.7),
-    ("세탁기",    "찬물 세탁 빈도 증가 (주 2회 추가)",         0.5),
-    ("TV",        "대기전력 차단 멀티탭 사용",                 0.4),
-    ("전기밥솥",  "보온 최소화 — 여열 활용",                  0.5),
-    ("컴퓨터",    "대기 시 모니터 전원 차단",                  0.3),
-    ("인덕션",    "여열 활용 — 종료 1분 전 차단",              0.2),
-    ("공기청정기","자동 모드 전환으로 불필요 가동 최소화",      0.3),
-]
-
-# 에너지효율 등급 → 절감 여지 배율 (1등급=최고효율, 5등급=최저효율)
-_EFF_MULTIPLIER = {1: 0.5, 2: 0.75, 3: 1.0, 4: 1.3, 5: 1.6}
-
-_FALLBACK_MISSIONS: list[tuple[str, float]] = [
-    ("저녁 19–21시 대기전력 차단",  1.4),
-    ("조명 LED 교체 (형광등 2개)",  0.9),
-    ("사용 안 하는 가전 플러그 뽑기", 0.6),
-]
-
 
 def _generate_missions(household_id: str) -> list[dict]:
-    """미션 3개 생성 — LLM 추천(insights 캐시) 우선, 없으면 가구 프로필 규칙 기반 폴백.
+    """AI 진단 LLM 추천 상위 3개를 오늘의 미션으로 변환.
 
-    LLM 경로: insights 1시간 캐시에서 SavingsRec 상위 3개를 미션으로 변환.
-    규칙 경로: 가구 프로필 가전 목록 + 에너지효율 등급 기반 동적 생성.
-    spec(PLAN_05): 상위 2개 pending, 가장 낮은 1개 done.
+    spec(PLAN_05): 상위 2개 pending, 절감량 최소 1개 done.
     """
-    cached = _get_cached(household_id)
-    if cached and cached.recommendations:
-        recs = sorted(cached.recommendations, key=lambda r: r.savings_kwh, reverse=True)[:3]
-        return [
-            {
-                "id":                 f"m{i + 1}",
-                "title":              r.title,
-                "expectedSavingsKwh": r.savings_kwh,
-                "status":             "done" if i == len(recs) - 1 else "pending",
-            }
-            for i, r in enumerate(recs)
-        ]
-
-    # ── 규칙 기반 폴백 ──────────────────────────────────────────────
-    profile = get_household_profile(household_id)
-    appliances: list[dict] = profile.get("raw", {}).get("appliances", [])
-
-    matched: list[tuple[str, float]] = []  # (title, expected_kwh)
-    seen: set[str] = set()
-
-    for appliance in appliances:
-        name = (appliance.get("name") or "").strip()
-        eff  = appliance.get("energy_efficiency")
-        mult = _EFF_MULTIPLIER.get(int(eff), 1.0) if eff else 1.0
-
-        for keyword, title, base_kwh in _MISSION_RULES:
-            if keyword in name and keyword not in seen:
-                seen.add(keyword)
-                matched.append((title, round(base_kwh * mult, 1)))
-                break
-
-    matched.sort(key=lambda x: x[1], reverse=True)
-    top3 = matched[:3]
-
-    for fb_title, fb_kwh in _FALLBACK_MISSIONS:
-        if len(top3) >= 3:
-            break
-        if not any(t == fb_title for t, _ in top3):
-            top3.append((fb_title, fb_kwh))
-
+    result = get_or_run_insights(household_id)
+    recs   = sorted(result.recommendations, key=lambda r: r.savings_kwh, reverse=True)[:3]
     return [
         {
             "id":                 f"m{i + 1}",
-            "title":              title,
-            "expectedSavingsKwh": kwh,
-            "status":             "done" if i == len(top3) - 1 else "pending",
+            "title":              r.title,
+            "expectedSavingsKwh": r.savings_kwh,
+            "status":             "done" if i == len(recs) - 1 else "pending",
         }
-        for i, (title, kwh) in enumerate(top3)
+        for i, r in enumerate(recs)
     ]
 
 
