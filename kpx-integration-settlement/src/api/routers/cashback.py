@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter
 from src.agent.data_tools import get_cashback_history, get_consumption_summary, get_household_profile
+from src.api.routers.insights import _get_cached
 
 router = APIRouter()
 
@@ -31,12 +32,26 @@ _FALLBACK_MISSIONS: list[tuple[str, float]] = [
 
 
 def _generate_missions(household_id: str) -> list[dict]:
-    """가구 프로필 기반 규칙 테이블로 절감 미션 3개 동적 생성.
+    """미션 3개 생성 — LLM 추천(insights 캐시) 우선, 없으면 가구 프로필 규칙 기반 폴백.
 
-    에너지효율 등급이 낮을수록 절감 여지가 크므로 예상 절감량을 높게 산정.
-    가전 목록이 부족하면 범용 fallback으로 보완.
+    LLM 경로: insights 1시간 캐시에서 SavingsRec 상위 3개를 미션으로 변환.
+    규칙 경로: 가구 프로필 가전 목록 + 에너지효율 등급 기반 동적 생성.
     spec(PLAN_05): 상위 2개 pending, 가장 낮은 1개 done.
     """
+    cached = _get_cached(household_id)
+    if cached and cached.recommendations:
+        recs = sorted(cached.recommendations, key=lambda r: r.savings_kwh, reverse=True)[:3]
+        return [
+            {
+                "id":                 f"m{i + 1}",
+                "title":              r.title,
+                "expectedSavingsKwh": r.savings_kwh,
+                "status":             "done" if i == len(recs) - 1 else "pending",
+            }
+            for i, r in enumerate(recs)
+        ]
+
+    # ── 규칙 기반 폴백 ──────────────────────────────────────────────
     profile = get_household_profile(household_id)
     appliances: list[dict] = profile.get("raw", {}).get("appliances", [])
 
@@ -54,18 +69,15 @@ def _generate_missions(household_id: str) -> list[dict]:
                 matched.append((title, round(base_kwh * mult, 1)))
                 break
 
-    # 절감량 내림차순 → 상위 3개 선출
     matched.sort(key=lambda x: x[1], reverse=True)
     top3 = matched[:3]
 
-    # 3개 미만이면 fallback으로 보완
     for fb_title, fb_kwh in _FALLBACK_MISSIONS:
         if len(top3) >= 3:
             break
         if not any(t == fb_title for t, _ in top3):
             top3.append((fb_title, fb_kwh))
 
-    # PLAN_05 spec: 2 pending + 1 done (절감량 최소 항목을 done으로)
     return [
         {
             "id":                 f"m{i + 1}",
