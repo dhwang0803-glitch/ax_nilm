@@ -16,7 +16,8 @@ from typing import Any
 
 import pytest
 
-from src.agent.coach import build_baseline_context, run_coach
+from src.agent.coach import run_coach
+from src.agent.context_engine import build_smart_context
 
 
 # ─── 헬퍼: OpenAI 응답 픽스처 ────────────────────────────────────────────────────
@@ -57,25 +58,29 @@ def _make_final_answer_choice(content: dict) -> Any:
     return resp
 
 
-# ─── build_baseline_context ──────────────────────────────────────────────────────
+# ─── build_smart_context ─────────────────────────────────────────────────────────
 
-class TestBuildBaselineContext:
+class TestBuildSmartContext:
     def test_returns_string(self) -> None:
-        ctx = build_baseline_context("HH001")
+        ctx = build_smart_context("HH001", "전기료 줄이려면?")
         assert isinstance(ctx, str)
         assert len(ctx) > 0
 
     def test_contains_baseline_header(self) -> None:
-        ctx = build_baseline_context("HH001")
-        assert "[현재 가구 baseline]" in ctx
+        ctx = build_smart_context("HH001", "요금제 알려줘")
+        assert "[현재 가구 baseline" in ctx
 
     def test_contains_summary_lines(self) -> None:
-        ctx = build_baseline_context("HH002")
+        ctx = build_smart_context("HH002", "이번 주 소비량")
         assert "- " in ctx
 
     def test_unknown_household_still_returns_string(self) -> None:
-        ctx = build_baseline_context("HH999")
+        ctx = build_smart_context("HH999", "질문")
         assert isinstance(ctx, str)
+
+    def test_intent_injected_in_header(self) -> None:
+        ctx = build_smart_context("HH001", "요금 단계 알려줘")
+        assert "의도:" in ctx
 
 
 # ─── run_coach — mock 통합 테스트 ────────────────────────────────────────────────
@@ -99,7 +104,7 @@ class TestRunCoachDirectAnswer:
         final_resp = _make_final_answer_choice(FINAL_ANSWER)
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료 줄이는 방법?", log_dir=str(tmp_path))
+            result = run_coach("HH001", "전기료 줄이는 방법?", log_dir=str(tmp_path), use_graph=False)
 
         assert "answer"      in result
         assert "tool_calls"  in result
@@ -107,12 +112,13 @@ class TestRunCoachDirectAnswer:
         assert "session_id"  in result
         assert "trace_path"  in result
         assert "pii_warnings" in result
+        assert "validation"  in result
 
     def test_answer_parsed_correctly(self, mock_env: None, tmp_path: str) -> None:
         final_resp = _make_final_answer_choice(FINAL_ANSWER)
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path))
+            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
 
         assert result["answer"]["recommendations"] == ["저녁 10시 이후 세탁기 사용 권장"]
         assert result["iterations"] == 1
@@ -121,7 +127,7 @@ class TestRunCoachDirectAnswer:
         final_resp = _make_final_answer_choice(FINAL_ANSWER)
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path))
+            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
 
         assert result["trace_path"] is not None
         assert os.path.exists(result["trace_path"])
@@ -130,7 +136,7 @@ class TestRunCoachDirectAnswer:
         final_resp = _make_final_answer_choice(FINAL_ANSWER)
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path))
+            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
 
         assert result["pii_warnings"] == []
 
@@ -138,7 +144,7 @@ class TestRunCoachDirectAnswer:
         final_resp = _make_final_answer_choice(FINAL_ANSWER)
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", session_id="fixed-sid", log_dir=str(tmp_path))
+            result = run_coach("HH001", "전기료?", session_id="fixed-sid", log_dir=str(tmp_path), use_graph=False)
 
         assert result["session_id"] == "fixed-sid"
 
@@ -154,7 +160,7 @@ class TestRunCoachDirectAnswer:
 
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path))
+            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
 
         assert "raw_text" in result["answer"]
 
@@ -168,7 +174,7 @@ class TestRunCoachWithToolCalls:
 
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
-            result = run_coach("HH001", "요금제 알려줘", log_dir=str(tmp_path))
+            result = run_coach("HH001", "요금제 알려줘", log_dir=str(tmp_path), use_graph=False)
 
         assert result["iterations"] == 2
         assert len(result["tool_calls"]) == 1
@@ -181,7 +187,7 @@ class TestRunCoachWithToolCalls:
 
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
-            result = run_coach("HH001", "요금제?", log_dir=str(tmp_path))
+            result = run_coach("HH001", "요금제?", log_dir=str(tmp_path), use_graph=False)
 
         trace_content = open(result["trace_path"], encoding="utf-8").read()
         assert "HH001" not in trace_content
@@ -199,7 +205,7 @@ class TestRunCoachPiiWarnings:
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
             with mock.patch("src.agent.coach._dispatch_tool", return_value=pii_result):
-                result = run_coach("HH001", "프로필?", log_dir=str(tmp_path))
+                result = run_coach("HH001", "프로필?", log_dir=str(tmp_path), use_graph=False)
 
         assert "real_name" in result["pii_warnings"]
 
@@ -219,7 +225,7 @@ class TestRunCoachPiiWarnings:
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
             with mock.patch("src.agent.coach._dispatch_tool", return_value=pii_result):
-                result = run_coach("HH001", "프로필?", log_dir=str(tmp_path))
+                result = run_coach("HH001", "프로필?", log_dir=str(tmp_path), use_graph=False)
 
         # LLM으로 전달된 tool 메시지 중 "홍길동"이 없어야 함
         tool_messages = [m for m in result["tool_calls"] if hasattr(m, "result")]
@@ -235,7 +241,7 @@ class TestRunCoachMaxIterations:
 
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = tool_resp
-            result = run_coach("HH001", "질문", max_iterations=2, log_dir=str(tmp_path))
+            result = run_coach("HH001", "질문", max_iterations=2, log_dir=str(tmp_path), use_graph=False)
 
         assert result["answer"] == {}
         assert result["iterations"] == 2
@@ -245,6 +251,55 @@ class TestRunCoachMaxIterations:
 
         with mock.patch("src.agent.coach.OpenAI") as MockClient:
             MockClient.return_value.chat.completions.create.return_value = tool_resp
-            result = run_coach("HH001", "질문", max_iterations=1, log_dir=str(tmp_path))
+            result = run_coach("HH001", "질문", max_iterations=1, log_dir=str(tmp_path), use_graph=False)
 
         assert os.path.exists(result["trace_path"])
+
+
+class TestRunCoachHitl:
+    """HITL 콜백 — before_tool / before_answer 중단 동작 확인."""
+
+    def test_before_tool_reject_injects_error_response(self, mock_env: None, tmp_path: str) -> None:
+        """before_tool이 False를 반환하면 tool 결과로 E_HITL_REJECTED가 주입된다."""
+        tool_resp  = _make_tool_call_choice("get_tariff_info", {"household_id": "HH001"})
+        final_resp = _make_final_answer_choice(FINAL_ANSWER)
+
+        rejected_tools: list[str] = []
+
+        def hitl(stage: str, payload: dict) -> bool:
+            if stage == "before_tool":
+                rejected_tools.append(payload["tool"])
+                return False
+            return True
+
+        with mock.patch("src.agent.coach.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
+            result = run_coach("HH001", "요금제?", log_dir=str(tmp_path), hitl_callback=hitl, use_graph=False)
+
+        assert "get_tariff_info" in rejected_tools
+        # tool이 거부돼도 agent loop는 계속 돌아 최종 답변을 받는다
+        assert result["answer"] != {}
+
+    def test_before_answer_reject_returns_empty(self, mock_env: None, tmp_path: str) -> None:
+        """before_answer가 False를 반환하면 answer={}로 즉시 반환된다."""
+        final_resp = _make_final_answer_choice(FINAL_ANSWER)
+
+        def hitl(stage: str, payload: dict) -> bool:
+            return stage != "before_answer"
+
+        with mock.patch("src.agent.coach.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.return_value = final_resp
+            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), hitl_callback=hitl, use_graph=False)
+
+        assert result["answer"] == {}
+
+    def test_hitl_none_does_not_affect_normal_flow(self, mock_env: None, tmp_path: str) -> None:
+        """hitl_callback=None이면 기존 동작과 동일하다."""
+        final_resp = _make_final_answer_choice(FINAL_ANSWER)
+
+        with mock.patch("src.agent.coach.OpenAI") as MockClient:
+            MockClient.return_value.chat.completions.create.return_value = final_resp
+            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), hitl_callback=None, use_graph=False)
+
+        assert result["answer"]["recommendations"] == FINAL_ANSWER["recommendations"]
+        assert "validation" in result
