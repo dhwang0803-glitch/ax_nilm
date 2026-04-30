@@ -1131,7 +1131,7 @@ def get_household_profile(household_id: str) -> dict[str, Any]:
     return {"summary": summary, "raw": p}
 
 
-def get_weather(date_range: tuple[str, str] | list[str], location: str = "서울") -> dict[str, Any]:
+def get_weather(date_range: list[str], location: str = "서울") -> dict[str, Any]:
     """과거 날씨 데이터(기온, 강수, 습도) 조회."""
     conn = _get_db_conn()
     if conn:
@@ -1185,7 +1185,7 @@ def get_consumption_summary(household_id: str, period: str = "week") -> dict[str
 
 def get_cashback_history(
     household_id: str,
-    date_range: tuple[str, str] | list[str] | None = None,
+    date_range: list[str] | None = None,
 ) -> dict[str, Any]:
     """에너지캐시백 월별 절감 실적·캐시백 지급 내역 조회.
 
@@ -1460,7 +1460,7 @@ def get_anomaly_events(household_id: str, status: str = "active") -> dict[str, A
 
 def get_anomaly_log(
     household_id: str,
-    date_range: tuple[str, str] | list[str] | None = None,
+    date_range: list[str] | None = None,
     severity: str = "all",
     appliance: str | None = None,
 ) -> dict[str, Any]:

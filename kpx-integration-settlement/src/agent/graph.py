@@ -175,7 +175,7 @@ def _make_agent_node(name: str, tools: list):
             _inner.append(create_react_agent(
                 _llm(),
                 tools,
-                state_modifier=SystemMessage(_AGENT_SYSTEMS[name]),
+                prompt=SystemMessage(_AGENT_SYSTEMS[name]),
             ))
         return _inner[0]
 
