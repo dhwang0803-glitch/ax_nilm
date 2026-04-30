@@ -95,3 +95,30 @@ test("설정 → 이상 탐지 내역 → KPI + 필터 + 표 + 필터 적용", a
     page.getByRole("heading", { name: "이벤트 (2건)" })
   ).toBeVisible();
 });
+
+test("설정 → 이메일 연동 → 카드 + 테스트 발송 mock 성공", async ({ page }) => {
+  await page.goto("/auth/login");
+  await page.getByLabel("이메일").fill("test@example.com");
+  await page.getByLabel("비밀번호").fill("nilm-mock-2026!");
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/home$/);
+
+  await page.getByRole("link", { name: "설정" }).click();
+  await page.getByRole("link", { name: "이메일 연동" }).click();
+  await expect(page).toHaveURL(/\/settings\/email$/);
+
+  await expect(
+    page.getByRole("heading", { name: "수신 이메일" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "이메일 수신 항목" })
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "테스트 메일 발송" })
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "테스트 메일 발송" }).click();
+  await expect(
+    page.getByText(/테스트 메일을 발송했습니다/)
+  ).toBeVisible();
+});

@@ -3,6 +3,7 @@ import { apiClient } from "../../services/apiClient";
 import type {
   AccountResponse,
   AnomalyEventsResponse,
+  EmailResponse,
   NotificationsResponse,
   SecurityResponse,
 } from "./types";
@@ -56,5 +57,17 @@ export function useAnomalyEvents() {
   return useQuery({
     queryKey: ["settings", "anomaly-events"],
     queryFn: fetchAnomalyEvents,
+  });
+}
+
+export async function fetchEmail(): Promise<EmailResponse> {
+  const res = await apiClient.get<EmailResponse>("/api/settings/email");
+  return res.data;
+}
+
+export function useEmail() {
+  return useQuery({
+    queryKey: ["settings", "email"],
+    queryFn: fetchEmail,
   });
 }

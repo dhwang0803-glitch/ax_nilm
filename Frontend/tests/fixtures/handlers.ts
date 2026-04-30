@@ -4,6 +4,7 @@ import { mockDashboardSummary } from "./dashboardData";
 import {
   mockAccount,
   mockAnomalyEvents,
+  mockEmail,
   mockNotifications,
   mockSecurity,
 } from "./settingsData";
@@ -106,5 +107,10 @@ export const handlers = [
   http.get("/api/settings/anomaly-events", async () => {
     await delay(300);
     return HttpResponse.json(mockAnomalyEvents);
+  }),
+
+  http.get("/api/settings/email", async () => {
+    await delay(300);
+    return HttpResponse.json(mockEmail);
   }),
 ];
