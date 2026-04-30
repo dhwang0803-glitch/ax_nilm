@@ -11,6 +11,28 @@
 4. 도구 smoke test: `python -c "from src.agent.data_tools import get_household_profile; print(get_household_profile('HH001')['summary'])"`
 5. 코치 에이전트 실행: `python -c "from src.agent.coach import run_coach; print(run_coach('HH001', '이번 주 전기료 줄이려면?'))"`
 
+## 로컬 API 서버 (Frontend 연결용, 2026-04-30~)
+
+Frontend의 MSW mock을 실 DB 데이터로 대체하는 로컬 FastAPI 서버.
+
+```bash
+# kpx-integration-settlement/ 에서 실행
+pip install fastapi uvicorn
+
+# IAP 터널 연결 후 (localhost:5436)
+DEFAULT_HH=HH001 DB_PASSWORD=<secret> uvicorn src.api.main:app --reload --port 8000
+# DEFAULT_HH: HH001~HH003 (mock) 또는 H011 등 (DB 실데이터)
+```
+
+| 파일 | 엔드포인트 |
+|------|------------|
+| `src/api/routers/dashboard.py` | `GET /api/dashboard/summary` |
+| `src/api/routers/usage.py` | `GET /api/usage/analysis` |
+| `src/api/routers/settings.py` | `GET /api/settings/account` |
+| `src/api/routers/cashback.py` | `GET /api/cashback/tracker` |
+
+**Frontend 연결**: `Frontend/.env.local`에 `VITE_API_BASE_URL=http://localhost:8000` 설정 → MSW 자동 우회.
+
 ## 아키텍처 (Tool-use 패턴, 2026-04-28~)
 
 임베딩 기반 접근 → Tool-use 패턴으로 전환 ([설계 근거](plans/agent_tool_design.md)).

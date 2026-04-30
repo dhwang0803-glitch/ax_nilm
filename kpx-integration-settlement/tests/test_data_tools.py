@@ -6,6 +6,7 @@ mock 데이터 범위 안의 정상 케이스와 unknown household_id 오류 케
 import pytest
 
 from src.agent.data_tools import (
+    estimate_cashback_potential,
     get_cashback_history,
     get_consumption_breakdown,
     get_consumption_hourly,
@@ -223,3 +224,52 @@ class TestGetTariffInfo:
         result = get_tariff_info("HH999")
         _assert_error(result)
         assert result["code"] == "E_NOT_FOUND"
+
+
+# ─── estimate_cashback_potential ────────────────────────────────────────────────
+
+class TestEstimateCashbackPotential:
+    @pytest.mark.parametrize("hid", ["HH001", "HH002", "HH003"])
+    def test_success_schema(self, hid: str) -> None:
+        result = estimate_cashback_potential(hid)
+        _assert_success(result)
+        raw = result["raw"]
+        for key in (
+            "reference_month", "baseline_kwh", "mtd_kwh", "days_elapsed",
+            "daily_pace_kwh", "projected_kwh", "savings_kwh", "savings_pct",
+            "qualifies_for_cashback", "expected_cashback_krw",
+            "target_kwh_for_3pct", "remaining_days",
+        ):
+            assert key in raw, f"raw에 '{key}' 없음"
+
+    def test_all_mock_households_not_qualifying(self) -> None:
+        for hid in ("HH001", "HH002", "HH003"):
+            result = estimate_cashback_potential(hid)
+            assert result["raw"]["qualifies_for_cashback"] is False
+            assert result["raw"]["expected_cashback_krw"] == 0
+
+    def test_projected_kwh_exceeds_baseline(self) -> None:
+        result = estimate_cashback_potential("HH001")
+        raw = result["raw"]
+        assert raw["projected_kwh"] > raw["baseline_kwh"]
+        assert raw["savings_pct"] < 0
+
+    def test_target_kwh_is_97pct_of_baseline(self) -> None:
+        result = estimate_cashback_potential("HH001")
+        raw = result["raw"]
+        expected_target = round(raw["baseline_kwh"] * 0.97, 1)
+        assert abs(raw["target_kwh_for_3pct"] - expected_target) < 0.05
+
+    def test_unknown_household(self) -> None:
+        result = estimate_cashback_potential("HH999")
+        _assert_error(result)
+        assert result["code"] == "E_NOT_FOUND"
+
+    def test_no_current_month_data(self) -> None:
+        result = estimate_cashback_potential("HH001", reference_month="2025-12")
+        _assert_error(result)
+        assert result["code"] == "E_NO_CURRENT"
+
+    def test_summary_mentions_불가_when_exceeded(self) -> None:
+        result = estimate_cashback_potential("HH001")
+        assert "불가" in result["summary"]
