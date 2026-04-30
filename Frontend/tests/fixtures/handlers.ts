@@ -1,7 +1,12 @@
 import { HttpResponse, delay, http } from "msw";
 import { mockCashbackTracker } from "./cashbackData";
 import { mockDashboardSummary } from "./dashboardData";
-import { mockAccount, mockNotifications, mockSecurity } from "./settingsData";
+import {
+  mockAccount,
+  mockAnomalyEvents,
+  mockNotifications,
+  mockSecurity,
+} from "./settingsData";
 import { mockUsageAnalysis } from "./usageData";
 
 const VALID_EMAIL = "test@example.com";
@@ -96,5 +101,10 @@ export const handlers = [
   http.get("/api/settings/security", async () => {
     await delay(300);
     return HttpResponse.json(mockSecurity);
+  }),
+
+  http.get("/api/settings/anomaly-events", async () => {
+    await delay(300);
+    return HttpResponse.json(mockAnomalyEvents);
   }),
 ];
