@@ -40,3 +40,16 @@ export type NotificationsResponse = {
   matrix: NotificationMatrixRow[];
   doNotDisturb: DoNotDisturb;
 };
+
+export type SecuritySession = {
+  id: string;
+  device: string;
+  location: string;
+  lastActiveAt: string;
+  current: boolean;
+};
+
+export type SecurityResponse = {
+  twoFactorEnabled: boolean;
+  sessions: SecuritySession[];
+};

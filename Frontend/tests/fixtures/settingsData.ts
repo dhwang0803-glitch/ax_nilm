@@ -1,6 +1,7 @@
 import type {
   AccountResponse,
   NotificationsResponse,
+  SecurityResponse,
 } from "../../src/features/settings/types";
 
 export const mockAccount: AccountResponse = {
@@ -30,4 +31,31 @@ export const mockNotifications: NotificationsResponse = {
     startMinutes: 22 * 60,
     endMinutes: 7 * 60,
   },
+};
+
+export const mockSecurity: SecurityResponse = {
+  twoFactorEnabled: false,
+  sessions: [
+    {
+      id: "s-cur",
+      device: "Chrome · macOS",
+      location: "서울",
+      lastActiveAt: "2026-04-30 09:42",
+      current: true,
+    },
+    {
+      id: "s-mob",
+      device: "Safari · iPhone 15",
+      location: "서울",
+      lastActiveAt: "2026-04-29 21:18",
+      current: false,
+    },
+    {
+      id: "s-other",
+      device: "Edge · Windows 11",
+      location: "부산",
+      lastActiveAt: "2026-04-26 14:03",
+      current: false,
+    },
+  ],
 };

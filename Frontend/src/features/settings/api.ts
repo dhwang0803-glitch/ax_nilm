@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../services/apiClient";
-import type { AccountResponse, NotificationsResponse } from "./types";
+import type {
+  AccountResponse,
+  NotificationsResponse,
+  SecurityResponse,
+} from "./types";
 
 export async function fetchAccount(): Promise<AccountResponse> {
   const res = await apiClient.get<AccountResponse>("/api/settings/account");
@@ -25,5 +29,17 @@ export function useNotifications() {
   return useQuery({
     queryKey: ["settings", "notifications"],
     queryFn: fetchNotifications,
+  });
+}
+
+export async function fetchSecurity(): Promise<SecurityResponse> {
+  const res = await apiClient.get<SecurityResponse>("/api/settings/security");
+  return res.data;
+}
+
+export function useSecurity() {
+  return useQuery({
+    queryKey: ["settings", "security"],
+    queryFn: fetchSecurity,
   });
 }
