@@ -74,3 +74,14 @@ export type AnomalyEventsResponse = {
   };
   events: AnomalyEvent[];
 };
+
+export type EmailToggleKey = "anomaly" | "cashback" | "weeklyReport" | "policy";
+
+export type EmailToggles = Record<EmailToggleKey, boolean>;
+
+export type EmailResponse = {
+  primaryEmail: string;
+  alternateEmail: string | null;
+  toggles: EmailToggles;
+  lastTestAt: string | null;
+};

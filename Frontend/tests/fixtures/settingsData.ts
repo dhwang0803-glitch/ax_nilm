@@ -1,6 +1,7 @@
 import type {
   AccountResponse,
   AnomalyEventsResponse,
+  EmailResponse,
   NotificationsResponse,
   SecurityResponse,
 } from "../../src/features/settings/types";
@@ -133,4 +134,16 @@ export const mockAnomalyEvents: AnomalyEventsResponse = {
       status: "resolved",
     },
   ],
+};
+
+export const mockEmail: EmailResponse = {
+  primaryEmail: "test@example.com",
+  alternateEmail: null,
+  toggles: {
+    anomaly: true,
+    cashback: true,
+    weeklyReport: false,
+    policy: false,
+  },
+  lastTestAt: "2026-04-25 10:18",
 };
