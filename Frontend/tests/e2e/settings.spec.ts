@@ -70,3 +70,28 @@ test("설정 → 보안 탭 → 4 카드 표시", async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByText("Chrome · macOS")).toBeVisible();
 });
+
+test("설정 → 이상 탐지 내역 → KPI + 필터 + 표 + 필터 적용", async ({ page }) => {
+  await page.goto("/auth/login");
+  await page.getByLabel("이메일").fill("test@example.com");
+  await page.getByLabel("비밀번호").fill("nilm-mock-2026!");
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/home$/);
+
+  await page.getByRole("link", { name: "설정" }).click();
+  await page.getByRole("link", { name: "이상 탐지 내역" }).click();
+  await expect(page).toHaveURL(/\/settings\/anomaly-log$/);
+
+  await expect(page.getByText("이번 달 이벤트")).toBeVisible();
+  await expect(page.getByText("평균 응답 시간")).toBeVisible();
+  await expect(page.getByText("3시간 12분")).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "이벤트 (8건)" })
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "높음" }).click();
+  await expect(
+    page.getByRole("heading", { name: "이벤트 (2건)" })
+  ).toBeVisible();
+});

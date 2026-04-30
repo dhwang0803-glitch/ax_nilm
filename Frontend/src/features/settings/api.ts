@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "../../services/apiClient";
 import type {
   AccountResponse,
+  AnomalyEventsResponse,
   NotificationsResponse,
   SecurityResponse,
 } from "./types";
@@ -41,5 +42,19 @@ export function useSecurity() {
   return useQuery({
     queryKey: ["settings", "security"],
     queryFn: fetchSecurity,
+  });
+}
+
+export async function fetchAnomalyEvents(): Promise<AnomalyEventsResponse> {
+  const res = await apiClient.get<AnomalyEventsResponse>(
+    "/api/settings/anomaly-events"
+  );
+  return res.data;
+}
+
+export function useAnomalyEvents() {
+  return useQuery({
+    queryKey: ["settings", "anomaly-events"],
+    queryFn: fetchAnomalyEvents,
   });
 }

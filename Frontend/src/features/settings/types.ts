@@ -53,3 +53,24 @@ export type SecurityResponse = {
   twoFactorEnabled: boolean;
   sessions: SecuritySession[];
 };
+
+export type AnomalySeverity = "low" | "medium" | "high";
+export type AnomalyStatus = "open" | "resolved";
+
+export type AnomalyEvent = {
+  id: string;
+  occurredAt: string;
+  appliance: string;
+  severity: AnomalySeverity;
+  description: string;
+  status: AnomalyStatus;
+};
+
+export type AnomalyEventsResponse = {
+  kpi: {
+    monthCount: number;
+    avgResponseMinutes: number;
+    unresolvedCount: number;
+  };
+  events: AnomalyEvent[];
+};
