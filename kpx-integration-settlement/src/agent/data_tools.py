@@ -568,7 +568,7 @@ def _db_household_profile(conn, household_id: str) -> dict[str, Any]:
 
 def _db_consumption_summary(conn, household_id: str, period: str) -> dict[str, Any]:
     with conn.cursor() as cur:
-        cur.execute("SELECT MAX(bucket_ts) FROM power_1min WHERE household_id = %s", (household_id,))
+        cur.execute("SELECT MAX(hour_bucket) FROM power_1hour WHERE household_id = %s", (household_id,))
         max_ts = cur.fetchone()[0]
     if not max_ts:
         conn.close()
@@ -582,11 +582,11 @@ def _db_consumption_summary(conn, household_id: str, period: str) -> dict[str, A
             """
             SELECT
                 ROUND(SUM(energy_wh)::numeric / 1000.0, 2) AS total_kwh,
-                COUNT(DISTINCT DATE(bucket_ts AT TIME ZONE 'Asia/Seoul')) AS day_count,
-                ROUND(AVG(active_power_avg)::numeric, 0) AS avg_w,
-                ROUND(MAX(active_power_max)::numeric, 0) AS peak_w
-            FROM power_1min
-            WHERE household_id = %s AND bucket_ts BETWEEN %s AND %s
+                COUNT(DISTINCT DATE(hour_bucket AT TIME ZONE 'Asia/Seoul')) AS day_count,
+                ROUND(AVG(active_power_avg)::numeric, 0) AS avg_w
+            FROM power_1hour
+            WHERE household_id = %s AND channel_num = 1
+              AND hour_bucket BETWEEN %s AND %s
             """,
             (household_id, start_dt, max_ts),
         )
@@ -595,10 +595,11 @@ def _db_consumption_summary(conn, household_id: str, period: str) -> dict[str, A
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT EXTRACT(HOUR FROM bucket_ts AT TIME ZONE 'Asia/Seoul') AS h,
+            SELECT EXTRACT(HOUR FROM hour_bucket AT TIME ZONE 'Asia/Seoul') AS h,
                    SUM(energy_wh) AS wh
-            FROM power_1min
-            WHERE household_id = %s AND bucket_ts BETWEEN %s AND %s
+            FROM power_1hour
+            WHERE household_id = %s AND channel_num = 1
+              AND hour_bucket BETWEEN %s AND %s
             GROUP BY h ORDER BY wh DESC LIMIT 3
             """,
             (household_id, start_dt, max_ts),
@@ -637,9 +638,9 @@ def _db_hourly_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT DATE(bucket_ts AT TIME ZONE 'Asia/Seoul') AS d
-            FROM power_1min WHERE household_id = %s
-            ORDER BY ABS(DATE(bucket_ts AT TIME ZONE 'Asia/Seoul') - %s::date) LIMIT 1
+            SELECT DISTINCT DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') AS d
+            FROM power_1hour WHERE household_id = %s
+            ORDER BY ABS(DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') - %s::date) LIMIT 1
             """,
             (household_id, date),
         )
@@ -653,15 +654,14 @@ def _db_hourly_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
         cur.execute(
             """
             SELECT
-                EXTRACT(HOUR FROM p.bucket_ts AT TIME ZONE 'Asia/Seoul') AS hour,
+                EXTRACT(HOUR FROM p.hour_bucket AT TIME ZONE 'Asia/Seoul') AS hour,
                 COALESCE(hc.device_name, 'ch' || LPAD(p.channel_num::text, 2, '0')) AS device,
-                ROUND(SUM(p.energy_wh)::numeric / 1000.0, 3) AS kwh
-            FROM power_1min p
+                ROUND((p.energy_wh / 1000.0)::numeric, 3) AS kwh
+            FROM power_1hour p
             LEFT JOIN household_channels hc
                 ON hc.household_id = p.household_id AND hc.channel_num = p.channel_num
             WHERE p.household_id = %s
-              AND DATE(p.bucket_ts AT TIME ZONE 'Asia/Seoul') = %s
-            GROUP BY hour, device
+              AND DATE(p.hour_bucket AT TIME ZONE 'Asia/Seoul') = %s
             ORDER BY hour, kwh DESC
             """,
             (household_id, actual_date),
@@ -740,6 +740,217 @@ def _db_weather(conn, date_range: list[str], location: str) -> dict[str, Any]:
     return {"summary": summary, "raw": records}
 
 
+def _db_anomaly_events(conn, household_id: str, status: str) -> dict[str, Any]:
+    """appliance_status_intervals → 이상 탐지 이벤트 변환.
+
+    'active' = end_ts IS NULL, 'all' = 전체. confidence 구간으로 severity 매핑:
+    >= 0.85 → warning, < 0.85 → info (현재 anomaly_events 전용 테이블 미생성 시 heuristic).
+    """
+    status_filter = "AND asi.end_ts IS NULL" if status == "active" else ""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                asi.id,
+                COALESCE(hc.device_name, 'ch' || LPAD(asi.channel_num::text, 2, '0')) AS device,
+                asc_.label AS status_label,
+                asi.confidence,
+                asi.model_version,
+                asi.start_ts,
+                asi.end_ts,
+                asi.created_at
+            FROM appliance_status_intervals asi
+            LEFT JOIN household_channels hc
+                ON hc.household_id = asi.household_id AND hc.channel_num = asi.channel_num
+            LEFT JOIN appliance_status_codes asc_
+                ON asc_.status_code = asi.status_code
+            WHERE asi.household_id = %s
+              AND asi.confidence >= 0.6
+              {status_filter}
+            ORDER BY asi.created_at DESC
+            LIMIT 50
+            """,
+            (household_id,),
+        )
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"summary": "현재 활성 이상 이벤트 없음", "raw": [], "count": 0}
+
+    events = []
+    for row in rows:
+        rid, device, label, conf, model_v, start_ts, end_ts, created_at = row
+        severity = "warning" if (conf or 0) >= 0.85 else "info"
+        ev_status = "active" if end_ts is None else "resolved"
+        events.append({
+            "event_id":     f"ASI-{household_id}-{rid}",
+            "appliance":    device,
+            "severity":     severity,
+            "type":         label or "상태 감지",
+            "detected_at":  start_ts.isoformat() if start_ts else None,
+            "description":  f"NILM 모델 감지 (신뢰도 {conf:.2f})" if conf else "신뢰도 정보 없음",
+            "confidence":   float(conf) if conf else None,
+            "model_version": model_v,
+            "status":       ev_status,
+        })
+
+    criticals = [e for e in events if e["severity"] == "critical"]
+    warnings   = [e for e in events if e["severity"] == "warning"]
+    severity_prefix = f"긴급 {len(criticals)}건 포함, " if criticals else ""
+    summary = (
+        f"이상 이벤트 {len(events)}건 ({severity_prefix}경고 {len(warnings)}건). "
+        f"주요: {events[0]['appliance']} — {events[0]['type']}"
+    )
+    return {"summary": summary, "raw": events, "count": len(events)}
+
+
+def _db_anomaly_log(
+    conn, household_id: str,
+    date_range: list[str] | None,
+    severity: str,
+    appliance: str | None,
+) -> dict[str, Any]:
+    """appliance_status_intervals → 이상 탐지 이력 로그 (필터 지원)."""
+    conditions = ["asi.household_id = %s", "asi.confidence >= 0.6"]
+    params: list = [household_id]
+
+    if date_range:
+        conditions.append("asi.start_ts >= %s::timestamptz")
+        conditions.append("asi.start_ts <= %s::timestamptz + INTERVAL '1 day'")
+        params += [date_range[0][:10], date_range[1][:10]]
+    if severity != "all":
+        # 심각도 기준: warning >= 0.85, info < 0.85
+        if severity == "warning":
+            conditions.append("asi.confidence >= 0.85")
+        elif severity == "info":
+            conditions.append("asi.confidence < 0.85")
+    if appliance:
+        conditions.append("hc.device_name ILIKE %s")
+        params.append(f"%{appliance}%")
+
+    where = " AND ".join(conditions)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                asi.id,
+                COALESCE(hc.device_name, 'ch' || LPAD(asi.channel_num::text, 2, '0')) AS device,
+                asc_.label AS status_label,
+                asi.confidence,
+                asi.model_version,
+                asi.start_ts,
+                asi.end_ts
+            FROM appliance_status_intervals asi
+            LEFT JOIN household_channels hc
+                ON hc.household_id = asi.household_id AND hc.channel_num = asi.channel_num
+            LEFT JOIN appliance_status_codes asc_
+                ON asc_.status_code = asi.status_code
+            WHERE {where}
+            ORDER BY asi.start_ts DESC
+            LIMIT 200
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+    conn.close()
+
+    records = []
+    for row in rows:
+        rid, device, label, conf, model_v, start_ts, end_ts = row
+        ev_severity = "warning" if (conf or 0) >= 0.85 else "info"
+        ev_status   = "active" if end_ts is None else "resolved"
+        records.append({
+            "event_id":      f"ASI-{household_id}-{rid}",
+            "appliance":     device,
+            "severity":      ev_severity,
+            "type":          label or "상태 감지",
+            "detected_at":   start_ts.isoformat() if start_ts else None,
+            "resolved_at":   end_ts.isoformat() if end_ts else None,
+            "description":   f"NILM 모델 감지 (신뢰도 {conf:.2f})" if conf else "신뢰도 정보 없음",
+            "confidence":    float(conf) if conf else None,
+            "model_version": model_v,
+            "status":        ev_status,
+        })
+
+    resolved = sum(1 for r in records if r["status"] == "resolved")
+    summary = f"이상 탐지 로그 {len(records)}건 (해결됨 {resolved}건, 활성 {len(records) - resolved}건)"
+    return {"summary": summary, "raw": records, "total": len(records)}
+
+
+def _db_consumption_hourly(conn, household_id: str, date: str) -> dict[str, Any]:
+    """power_1hour ch01 기준 24시간 총 소비량 (가전 분해 없음)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXTRACT(HOUR FROM hour_bucket AT TIME ZONE 'Asia/Seoul') AS h,
+                   ROUND((energy_wh / 1000.0)::numeric, 3) AS kwh
+            FROM power_1hour
+            WHERE household_id = %s AND channel_num = 1
+              AND DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') = %s::date
+            ORDER BY h
+            """,
+            (household_id, date),
+        )
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"error": f"데이터 없음: {household_id} {date}", "code": "E_NO_DATA"}
+
+    hourly = [{"hour": int(r[0]), "kwh": float(r[1] or 0)} for r in rows]
+    # 누락 시간대 0으로 채우기
+    hour_map = {r["hour"]: r["kwh"] for r in hourly}
+    full = [{"hour": h, "kwh": hour_map.get(h, 0.0)} for h in range(24)]
+    total = round(sum(r["kwh"] for r in full), 2)
+    return {
+        "summary": f"{date} 시간대별 총 소비량 {total}kWh (24시간).",
+        "raw": full,
+    }
+
+
+def _db_consumption_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
+    """power_1hour 채널별 일일 합산 → 가전 분해 (share_pct 포함)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                p.channel_num,
+                COALESCE(hc.device_name, 'ch' || LPAD(p.channel_num::text, 2, '0')) AS device,
+                ROUND(SUM(p.energy_wh / 1000.0)::numeric, 3) AS kwh
+            FROM power_1hour p
+            LEFT JOIN household_channels hc
+                ON hc.household_id = p.household_id AND hc.channel_num = p.channel_num
+            WHERE p.household_id = %s
+              AND p.channel_num != 1
+              AND DATE(p.hour_bucket AT TIME ZONE 'Asia/Seoul') = %s::date
+            GROUP BY p.channel_num, device
+            ORDER BY kwh DESC
+            """,
+            (household_id, date),
+        )
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"error": f"데이터 없음: {household_id} {date}", "code": "E_NO_DATA"}
+
+    grand = sum(float(r[2] or 0) for r in rows) or 1.0
+    breakdown = [
+        {
+            "appliance":        r[1],
+            "kwh":              float(r[2] or 0),
+            "share_pct":        round(float(r[2] or 0) / grand * 100, 1),
+            "active_intervals": [],
+        }
+        for r in rows
+    ]
+    top = breakdown[:3]
+    top_str = ", ".join(f"{a['appliance']} {a['kwh']}kWh" for a in top)
+    summary = f"{date} 가전 분해 ({len(breakdown)}종). 상위 소비: {top_str}"
+    return {"summary": summary, "raw": breakdown}
+
+
 _TIER_THRESHOLDS = [200, 400]
 _TIER_RATES      = [93.3, 187.9, 280.6]
 _BASE_CHARGES    = [910, 1600, 7300]
@@ -747,7 +958,7 @@ _BASE_CHARGES    = [910, 1600, 7300]
 
 def _db_tariff_info(conn, household_id: str) -> dict[str, Any]:
     with conn.cursor() as cur:
-        cur.execute("SELECT MAX(bucket_ts) FROM power_1min WHERE household_id = %s", (household_id,))
+        cur.execute("SELECT MAX(hour_bucket) FROM power_1hour WHERE household_id = %s", (household_id,))
         max_ts = cur.fetchone()[0]
     if not max_ts:
         conn.close()
@@ -757,9 +968,9 @@ def _db_tariff_info(conn, household_id: str) -> dict[str, Any]:
         cur.execute(
             """
             SELECT ROUND(SUM(energy_wh)::numeric / 1000.0, 0)
-            FROM power_1min
+            FROM power_1hour
             WHERE household_id = %s AND channel_num = 1
-              AND DATE_TRUNC('month', bucket_ts AT TIME ZONE 'Asia/Seoul')
+              AND DATE_TRUNC('month', hour_bucket AT TIME ZONE 'Asia/Seoul')
                   = DATE_TRUNC('month', %s AT TIME ZONE 'Asia/Seoul')
             """,
             (household_id, max_ts),
@@ -806,9 +1017,9 @@ def _db_cashback_history(conn, household_id: str) -> dict[str, Any]:
         cur.execute(
             """
             SELECT
-                DATE_TRUNC('month', bucket_ts AT TIME ZONE 'Asia/Seoul') AS month,
+                DATE_TRUNC('month', hour_bucket AT TIME ZONE 'Asia/Seoul') AS month,
                 ROUND(SUM(energy_wh)::numeric / 1000.0, 1) AS total_kwh
-            FROM power_1min
+            FROM power_1hour
             WHERE household_id = %s AND channel_num = 1
             GROUP BY month ORDER BY month
             """,
@@ -1027,20 +1238,29 @@ def _calc_cashback_potential(
     """캐시백 수령 가능 여부·예상 금액 내부 계산 (LLM 미노출 private 함수).
 
     tariff month-to-date 사용량을 기반으로 월말 예상 총 소비를 추산하고
-    baseline 대비 3% 절감 충족 여부를 판단한다. (mock 기준일: 2026-04-28, 28일 경과)
+    baseline 대비 3% 절감 충족 여부를 판단한다.
     """
-    if household_id not in _KNOWN_HOUSEHOLDS:
-        return {"error": f"household_id not found: {household_id}", "code": "E_NOT_FOUND"}
+    # DB가 연결되어 있으면 실 데이터 사용
+    cb_data    = get_cashback_history(household_id)
+    tariff_data = get_tariff_info(household_id)
+    if "error" in cb_data or "error" in tariff_data:
+        if household_id not in _KNOWN_HOUSEHOLDS:
+            return {"error": f"household_id not found: {household_id}", "code": "E_NOT_FOUND"}
+        cb_data    = {"raw": _MOCK_CASHBACK_HISTORY.get(household_id, [])}
+        tariff_data = {"raw": _MOCK_TARIFF.get(household_id, {})}
 
-    history = _MOCK_CASHBACK_HISTORY.get(household_id, [])
-    rec = next((r for r in history if r["month"] == reference_month), None)
-    if rec is None or rec["status"] != "집계중":
+    history = cb_data.get("raw", [])
+    rec = next((r for r in history if r.get("month", "") == reference_month), None)
+    if rec is None or rec.get("status") != "집계중":
         return {"error": f"{reference_month} 집계중 데이터 없음", "code": "E_NO_CURRENT"}
 
-    baseline_kwh   = rec["baseline_kwh"]
-    mtd_kwh        = _MOCK_TARIFF[household_id]["current_month_kwh"]
-    _DAYS_ELAPSED  = 28  # 2026-04-28 기준
-    _DAYS_IN_MONTH = 30  # 4월
+    baseline_kwh = rec["baseline_kwh"]
+    mtd_kwh      = tariff_data.get("raw", {}).get("current_month_kwh", 0)
+
+    from datetime import date as _date
+    today          = _date.today()
+    _DAYS_ELAPSED  = today.day
+    _DAYS_IN_MONTH = 30
 
     daily_pace    = round(mtd_kwh / _DAYS_ELAPSED, 1)
     projected_kwh = round(mtd_kwh / _DAYS_ELAPSED * _DAYS_IN_MONTH, 1)
@@ -1112,6 +1332,10 @@ def get_consumption_hourly(
 
     raw: [{"hour": 0~23, "kwh": float}, ...] 24개 행.
     """
+    conn = _get_db_conn()
+    if conn:
+        return _db_consumption_hourly(conn, household_id, date)
+    # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
         return {"error": f"household_id not found: {household_id}", "code": "E_NOT_FOUND"}
 
@@ -1128,10 +1352,14 @@ def get_consumption_breakdown(
     household_id: str,
     date: str = "2026-04-27",
 ) -> dict[str, Any]:
-    """가전별 전력 소비 분해 결과 조회 (NILM 분해 기반).
+    """가전별 전력 소비 분해 결과 조회 (power_1hour 채널별 기반).
 
     raw: [{"appliance": str, "kwh": float, "share_pct": float, "active_intervals": list}]
     """
+    conn = _get_db_conn()
+    if conn:
+        return _db_consumption_breakdown(conn, household_id, date)
+    # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
         return {"error": f"household_id not found: {household_id}", "code": "E_NOT_FOUND"}
 
@@ -1206,6 +1434,10 @@ def get_anomaly_events(household_id: str, status: str = "active") -> dict[str, A
     /insights 화면 — 모델 신뢰도·가전별 이상 유형·LLM 절약 권고 컨텍스트 제공.
     status: 'active' | 'all'
     """
+    conn = _get_db_conn()
+    if conn:
+        return _db_anomaly_events(conn, household_id, status)
+    # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
         return {"error": f"household_id not found: {household_id}", "code": "E_NOT_FOUND"}
 
@@ -1238,6 +1470,10 @@ def get_anomaly_log(
     severity: 'all' | 'info' | 'warning' | 'critical'
     appliance: 가전명 필터 (생략 시 전체)
     """
+    conn = _get_db_conn()
+    if conn:
+        return _db_anomaly_log(conn, household_id, list(date_range) if date_range else None, severity, appliance)
+    # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
         return {"error": f"household_id not found: {household_id}", "code": "E_NOT_FOUND"}
 

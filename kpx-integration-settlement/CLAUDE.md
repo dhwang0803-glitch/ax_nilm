@@ -43,7 +43,12 @@ DEFAULT_HH=HH001 DB_PASSWORD=<secret> uvicorn src.api.main:app --reload --port 8
 | `src/agent/coach.py` | 코치 Agent loop (baseline 컨텍스트 주입 + function calling) |
 | `tests/test_data_tools.py` | 8개 도구 schema 검증 단위 테스트 |
 
-**mock → 실데이터 연결 예정**: 4주차에 DB·NILM·KMA·KEPCO API 연결.
+**4주차 실데이터 연결 완료** (2026-05-01):
+- `power_1hour` 기반: get_consumption_summary / get_cashback_history / get_tariff_info / get_hourly_appliance_breakdown / get_consumption_hourly / get_consumption_breakdown
+- `appliance_status_intervals` 기반: get_anomaly_events / get_anomaly_log
+- `household_daily_env` 기반: get_weather (KMA 외부 API 대신 DB 활용)
+- `_calc_cashback_potential`: 내부 mock 직접 참조 → get_cashback_history / get_tariff_info 위임
+- 날씨 예보(get_forecast), `appliance_status_codes` anomaly 전용 테이블 미생성분은 mock 유지
 
 ## 파일 생성 금지 위치
 
