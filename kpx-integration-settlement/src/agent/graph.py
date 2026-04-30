@@ -26,7 +26,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import create_react_agent
 from langgraph.types import Command
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from .anonymizer import scrub_tool_output, validate_no_pii
@@ -295,37 +295,39 @@ def run_graph(
 
 class AnomalyDiagnosis(BaseModel):
     event_id: str
-    diagnosis: str  # 수치 포함 진단 문장 1~2개
-    action: str     # 짧은 조치어
+    diagnosis: str = Field(max_length=100)
+    action: str = Field(max_length=15)
 
 
 class SavingsRec(BaseModel):
-    title: str
-    savings_kwh: float
-    savings_krw: int
+    title: str = Field(max_length=30)
+    savings_kwh: float = Field(ge=0.1, le=10.0)
+    savings_krw: int = Field(ge=10, le=3000)
 
 
 class InsightsLLMOutput(BaseModel):
     anomaly_diagnoses: list[AnomalyDiagnosis]
-    recommendations: list[SavingsRec]
+    recommendations: list[SavingsRec] = Field(min_length=3, max_length=5)
 
 
 _INSIGHTS_SYSTEM = """\
 당신은 한국 가정 전력 전문 코치입니다. 아래 이상 탐지 데이터를 보고 두 가지를 작성하세요.
 
 1. anomaly_diagnoses: 각 이상 이벤트에 대해
-   - diagnosis: 수치를 포함한 진단 문장 1~2개 (예: "평균 대비 40% 높은 소비. 필터 점검 권장.")
-   - action: 짧은 조치어 (예: "필터 점검")
+   - diagnosis: 수치를 포함한 진단 문장 1~2개 (예: "평균 대비 40% 높은 소비. 필터 점검 권장.") — 최대 100자
+   - action: 2~6자 명사형 조치어 (예: "필터 점검", "설정 확인") — 최대 15자
 
-2. recommendations: 데이터 기반 절약 추천 5개 이내
-   - title: 추천 행동
-   - savings_kwh: 예상 월 절감량 (소수 첫째 자리)
-   - savings_krw: 예상 월 절약 금액 (정수, 원)
+2. recommendations: 데이터 기반 단기 절약 행동 3~5개
+   - title: 추천 행동 (최대 30자, 즉시 실행 가능한 행동만 — 가전 교체·구매 제외)
+   - savings_kwh: 예상 월 절감량 (0.1~10.0 kWh, 소수 첫째 자리)
+   - savings_krw: round(savings_kwh × 100) — KEPCO 에너지캐시백 기준 100원/kWh (정수, 10~3000원)
 
 규칙:
-- 주어진 데이터에 없는 수치를 추측하지 마세요.
-- kWh는 소수 첫째 자리, 금액은 정수로 표시하세요.
-- 의료·안전 관련 권고(난방 완전 차단 등)는 하지 마세요."""
+- savings_kwh 범위: 0.1~10.0 (평균 가정 월 300 kWh 기준, 단일 행동 최대 10 kWh 절감)
+- savings_krw = round(savings_kwh × 100) 로 계산 (절대 × 1000 사용 금지)
+- 가전 교체·구매·인프라 투자 추천 금지 — 사용 습관 변경만 권고
+- 의료·안전 관련 권고(난방 완전 차단 등) 금지
+- kWh 소수 첫째 자리, 금액 정수로 표시"""
 
 
 def run_insights(household_id: str) -> InsightsLLMOutput:
