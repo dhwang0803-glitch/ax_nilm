@@ -1,17 +1,30 @@
 import os
 from fastapi import APIRouter
 from src.agent.data_tools import get_cashback_history, get_consumption_summary
+from src.api.routers.insights import get_or_run_insights
 
 router = APIRouter()
 
 _DAYS = ["월", "화", "수", "목", "금", "토", "일"]
 _DAY_FACTORS = [0.88, 1.00, 0.95, 1.08, 1.05, 1.22, 0.82]
 
-_DEFAULT_MISSIONS = [
-    {"id": "m1", "title": "저녁 19–21시 대기전력 차단", "expectedSavingsKwh": 1.4, "status": "pending"},
-    {"id": "m2", "title": "냉장고 온도 2단계 → 1단계", "expectedSavingsKwh": 0.7, "status": "pending"},
-    {"id": "m3", "title": "조명 LED 교체 (형광등 2개)", "expectedSavingsKwh": 0.9, "status": "done"},
-]
+
+def _generate_missions(household_id: str) -> list[dict]:
+    """AI 진단 LLM 추천 상위 3개를 오늘의 미션으로 변환.
+
+    spec(PLAN_05): 상위 2개 pending, 절감량 최소 1개 done.
+    """
+    result = get_or_run_insights(household_id)
+    recs   = sorted(result.recommendations, key=lambda r: r.savings_kwh, reverse=True)[:3]
+    return [
+        {
+            "id":                 f"m{i + 1}",
+            "title":              r.title,
+            "expectedSavingsKwh": r.savings_kwh,
+            "status":             "done" if i == len(recs) - 1 else "pending",
+        }
+        for i, r in enumerate(recs)
+    ]
 
 
 def _make_weekly(daily_avg: float, prev_factor: float = 1.05):
@@ -43,9 +56,8 @@ def cashback_tracker():
         cb_rate = int(completed[-1].get("cashback_rate_krw_per_kwh") or 100)
     target_cashback_krw = round(target_cashback_kwh * cb_rate)
 
-    # Use actual savings_pct from current month record if available
     current_savings_pct = float(current_rec.get("savings_pct") or 8.4) if current_rec else 8.4
-    expected_savings_pct = round(current_savings_pct * 1.13, 1)  # project to month-end
+    expected_savings_pct = round(current_savings_pct * 1.13, 1)
     progress_pct = min(round(current_savings_pct / target_savings_pct * 100), 100)
     expected_progress_pct = min(round(expected_savings_pct / target_savings_pct * 100), 100)
 
@@ -82,5 +94,5 @@ def cashback_tracker():
         },
         "weekly": {"days": weekly_days},
         "monthly": {"year": 2026, "months": months, "currentMonth": 4},
-        "missions": _DEFAULT_MISSIONS,
+        "missions": _generate_missions(hh),
     }
