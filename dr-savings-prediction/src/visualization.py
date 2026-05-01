@@ -159,18 +159,34 @@ def save_all(
     plt.tight_layout()
     _save(fig, plots_dir, '06_cluster_cross_analysis.png')
 
-    # ── 7. 기온 분포 ─────────────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(8, 4))
-    data_by_cluster = [
-        result_df.loc[result_df['cluster'] == c, 'temperature'].dropna().values
-        for c in range(n_clusters)
-    ]
-    ax.boxplot(data_by_cluster, labels=[f'C{c}' for c in range(n_clusters)],
-               patch_artist=True,
-               boxprops=dict(facecolor='lightyellow', color='gray'),
-               medianprops=dict(color='red', linewidth=2))
-    ax.set_title('클러스터별 기온 분포'); ax.set_xlabel('Cluster'); ax.set_ylabel('기온 (°C)')
+    # ── 7. 4시간 윈도우별 소비 분포 ──────────────────────────────────────────
+    # profiles (N, 1440) → 6개 윈도우 평균 전력 (N, 6)
+    n_windows = 6
+    win_size  = 1440 // n_windows          # 240분 = 4시간
+    win_avg   = profiles.reshape(len(profiles), n_windows, win_size).mean(axis=2)
+    win_labels = ['0~4h', '4~8h', '8~12h', '12~16h', '16~20h', '20~24h']
+
+    fig, axes = plt.subplots(1, n_clusters, figsize=(4 * n_clusters, 5), sharey=True)
+    if n_clusters == 1:
+        axes = [axes]
+    for c, ax in enumerate(axes):
+        data = win_avg[labels == c]        # (n_samples, 6)
+        ax.boxplot(
+            [data[:, w] for w in range(n_windows)],
+            labels=win_labels,
+            patch_artist=True,
+            boxprops=dict(facecolor=palette[c], alpha=0.4),
+            medianprops=dict(color='red', linewidth=2),
+            whiskerprops=dict(color='gray'),
+            capprops=dict(color='gray'),
+        )
+        ax.set_title(f'Cluster {c}  ({(labels == c).sum()}건)', fontsize=11)
+        ax.set_xlabel('시간대 윈도우')
+        if c == 0:
+            ax.set_ylabel('평균 전력 (W)')
+        ax.tick_params(axis='x', rotation=30)
+    plt.suptitle('클러스터별 4시간 윈도우 소비 분포', fontsize=13, y=1.02)
     plt.tight_layout()
-    _save(fig, plots_dir, '07_cluster_temperature.png')
+    _save(fig, plots_dir, '07_window_4h_distribution.png')
 
     print(f'완료. 총 7개 PNG → {plots_dir}')

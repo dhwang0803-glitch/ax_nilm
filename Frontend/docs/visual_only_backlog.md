@@ -105,6 +105,7 @@
 | 항목 | 위치 | 현재 동작 | 본 구현 필요 | 우선순위 |
 |------|------|-----------|---------------|----------|
 | 필터 서버 사이드 전환 | `features/settings/components/FilterPillsCard.tsx` | 클라이언트 사이드 필터링(useMemo) 작동 | 백엔드 합류 시 query param 송신 + 페이징 | MED |
+| 이벤트 행 "상세" 버튼 | `features/settings/components/AnomalyEventsTable.tsx` | alert "준비 중" | 이벤트 상세 모달 또는 `/anomaly/:id` 라우트 (07 highlight "자세히" 와 deep link 통합 검토) | MED |
 | CSV 내보내기 | `features/settings/components/ExportToolbar.tsx` | alert "준비 중" | client blob 또는 백엔드 export endpoint (Phase 04 와 통합) | HIGH |
 | JSON 내보내기 | 같음 | alert "준비 중" | 같음 | HIGH |
 | PDF 내보내기 | 같음 | alert "준비 중" | 백엔드 PDF 생성 (jsPDF 또는 server-side) | MED |
@@ -121,9 +122,19 @@
 
 ---
 
-## 후속 Phase 추가 예정 (Phase 07 insights)
+## Phase 07 — AI 진단 (`/insights`)
 
-Phase 07 본 구현 시 본 백로그도 갱신 — AI 진단 화면의 placeholder 항목 추가.
+> PLAN_07_INSIGHTS.md §8 Out of Scope 와 동기화. mutation 일괄 후속 (06 와 같은 정책).
+
+| 항목 | 위치 | 현재 동작 | 본 구현 필요 | 우선순위 |
+|------|------|-----------|---------------|----------|
+| highlight 카드 "자세히" 버튼 | `features/insights/components/AnomalyHighlightCard.tsx` | alert "준비 중" | 이벤트 상세 모달 또는 06-D 행으로 deep link (06-D "상세" 와 통합) | LOW |
+| "재진단 / 다시 분석" 버튼 | (미구현 — PLAN_07 §8) | 없음 (현재 미배치) | 재진단 버튼 + POST `/api/insights/regenerate` + LLM 재호출 | MED |
+| 추천 dismiss / 완료 체크 | (미구현 — PLAN_07 §8) | 없음 | PATCH `/api/insights/recommendations/:id` + 낙관적 업데이트 | MED |
+| 주간 추이 차트 기간 segment (4주/12주/52주) | (미구현 — PLAN_07 §8) | 4주 fixed | endpoint 분리 + 단위별 응답 (Phase 04 segment 와 통합) | LOW |
+| 추천 표 신뢰도 정렬·필터 | (미구현 — PLAN_07 §8) | 없음 (서버 응답 순서 그대로) | 정렬 헤더 + 신뢰도 임계 필터 | LOW |
+
+---
 
 ## 출품 후 우선순위 정리
 

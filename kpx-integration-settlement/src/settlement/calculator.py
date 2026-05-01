@@ -20,8 +20,8 @@ from datetime import date
 # 절감률 구간별 단가 (오름차순 — (최소 절감률, 단가)) — KEPCO 2024년 1월분 기준
 _CASHBACK_TIERS: list[tuple[float, float]] = [
     (0.20, 100.0),
-    (0.10,  80.0),
-    (0.05,  60.0),
+    (0.10,  70.0),
+    (0.05,  50.0),
     (0.03,  30.0),
 ]
 _MIN_SAVINGS_RATE = 0.03   # 3% 미만 미지급
