@@ -118,20 +118,21 @@ def build_active_mask(labels: list[dict], timestamps: pd.Series) -> np.ndarray:
 
     shape: (len(timestamps),)
     """
-    # timestamps가 tz-aware이면 naive로 통일
+    # pandas 비교 대신 numpy int64(nanoseconds)로 변환해 속도 확보
     if hasattr(timestamps, "dt") and timestamps.dt.tz is not None:
         timestamps = timestamps.dt.tz_convert(None)
+    ts_ns = timestamps.values.astype("datetime64[ns]").view(np.int64)
 
-    mask = np.zeros(len(timestamps), dtype=bool)
+    mask = np.zeros(len(ts_ns), dtype=bool)
     for label in labels:
         start_val = label.get("start_ts")
         end_val   = label.get("end_ts")
         if start_val is None or end_val is None or pd.isna(start_val) or pd.isna(end_val):
             continue
         try:
-            start = _to_naive(start_val)
-            end   = _to_naive(end_val)
+            start_ns = _to_naive(start_val).value
+            end_ns   = _to_naive(end_val).value
         except Exception:
             continue
-        mask |= (timestamps >= start) & (timestamps <= end)
+        mask |= (ts_ns >= start_ns) & (ts_ns <= end_ns)
     return mask
