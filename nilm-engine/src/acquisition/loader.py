@@ -126,7 +126,7 @@ def build_active_mask(labels: list[dict], timestamps: pd.Series) -> np.ndarray:
     for label in labels:
         start_val = label.get("start_ts")
         end_val   = label.get("end_ts")
-        if start_val is None or end_val is None:
+        if start_val is None or end_val is None or pd.isna(start_val) or pd.isna(end_val):
             continue
         try:
             start = _to_naive(start_val)
