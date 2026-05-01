@@ -44,6 +44,14 @@ APPLIANCE_INDEX: dict[str, int] = {
 }
 N_APPLIANCES = 22
 
+# labels parquet의 appliance_name이 코드 정의와 다를 경우 정규화
+_NAME_ALIASES: dict[str, str] = {
+    "식기세척기":       "식기세척기/건조기",
+    "전기장판, 담요":   "전기장판/담요",
+    "김치 냉장고":      "김치냉장고",
+    "진공 청소기(유선)": "진공청소기(유선)",
+}
+
 _labels_cache: dict[str, pd.DataFrame] = {}
 
 
@@ -303,6 +311,7 @@ class GCSNILMDataset(Dataset):
                     if ch == "ch01":
                         continue
                     name = get_appliance_name_gcs(gcs_fs, house_id, ch, label_path)
+                    name = _NAME_ALIASES.get(name, name)
                     if name not in APPLIANCE_INDEX:
                         continue
                     idx = APPLIANCE_INDEX[name]
