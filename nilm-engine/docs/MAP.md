@@ -127,12 +127,10 @@ result = NILMDisaggregator("checkpoints/EXP1_cnn_tda.pt").disaggregate(power_arr
 
 ---
 
-## 현재 실험 상태 (v1, 3 houses)
+## 현재 실험 상태
 
 | split | houses | 날짜 기준 |
 |-------|--------|----------|
-| train | house_022, house_023 | EXP별 week N (house 시작일 기준 7일) |
-| val | house_026 | 전체 기간 |
-| test | house_026 | 전체 기간 |
-
-> house 10개 확보 후 val/test를 별도 house로 분리 예정.
+| train | house_011, 015, 016, 017, 033, 039, 054, 063 | EXP별 week N (house 시작일 기준 7일) |
+| val | house_049 | 전체 기간 |
+| test | house_067 | 전체 기간 |
