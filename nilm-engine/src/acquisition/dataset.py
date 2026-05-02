@@ -48,6 +48,14 @@ APPLIANCE_INDEX: dict[str, int] = {
 }
 N_APPLIANCES = len(APPLIANCE_INDEX)  # 22
 
+# 로컬 라벨 parquet의 가전명이 코드 정의와 다를 경우 정규화 (gcs_loader._NAME_ALIASES와 동기화)
+_NAME_ALIASES: dict[str, str] = {
+    "식기세척기":        "식기세척기/건조기",
+    "전기장판, 담요":    "전기장판/담요",
+    "김치 냉장고":       "김치냉장고",
+    "진공 청소기(유선)": "진공청소기(유선)",
+}
+
 
 def _downsample_block_avg(arr: np.ndarray, factor: int) -> np.ndarray:
     """1D 또는 2D(N_apps, samples) 배열을 block 평균으로 다운샘플."""
@@ -261,7 +269,9 @@ class NILMDataset(Dataset):
                         continue
 
                     name = get_appliance_name(data_root, house_id, ch)
+                    name = _NAME_ALIASES.get(name, name)
                     if name not in APPLIANCE_INDEX:
+                        print(f"[NILMDataset] unknown appliance name — {house_id}/{ch}: {name!r}")
                         continue
 
                     idx = APPLIANCE_INDEX[name]

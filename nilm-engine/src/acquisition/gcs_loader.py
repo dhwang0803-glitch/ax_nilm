@@ -313,6 +313,7 @@ class GCSNILMDataset(Dataset):
                     name = get_appliance_name_gcs(gcs_fs, house_id, ch, label_path)
                     name = _NAME_ALIASES.get(name, name)
                     if name not in APPLIANCE_INDEX:
+                        print(f"[GCSNILMDataset] unknown appliance name — {house_id}/{ch}: {name!r}")
                         continue
                     idx = APPLIANCE_INDEX[name]
                     try:
