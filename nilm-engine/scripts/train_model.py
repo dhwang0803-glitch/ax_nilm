@@ -235,20 +235,13 @@ def evaluate(
         logit_arr = np.concatenate(all_fusion_logit, axis=0)
 
     valid_mask = valid_arr > 0
-    p    = pred_arr[valid_mask]
-    t    = true_arr[valid_mask]
-    p_on = pred_on[valid_mask]
-    t_on = on_off_arr[valid_mask].astype(bool)
+    p = pred_arr[valid_mask]
+    t = true_arr[valid_mask]
 
     mae  = float(np.abs(p - t).mean())
     rmse = float(np.sqrt(((p - t) ** 2).mean()))
     sae  = float(np.abs(pred_arr.sum(axis=0) - true_arr.sum(axis=0)).sum()
                  / (true_arr.sum() + 1e-8))
-
-    tp   = float((p_on & t_on).sum())
-    fp   = float((p_on & ~t_on).sum())
-    fn   = float((~p_on & t_on).sum())
-    f1   = 2 * tp / (2 * tp + fp + fn + 1e-8)
 
     f1_cls = None
     best_cls_thresholds = np.zeros(N_APPLIANCES)
@@ -276,13 +269,8 @@ def evaluate(
             # val에서 구한 임계값을 freeze해서 사용 (test/final eval 누설 방지)
             best_cls_thresholds = np.asarray(cls_thresholds)
         pred_on_cls = logit_arr >= best_cls_thresholds[np.newaxis, :]  # (N, 22)
-        pc_on = pred_on_cls[valid_mask]
-        tp_c  = float((pc_on & t_on).sum())
-        fp_c  = float((pc_on & ~t_on).sum())
-        fn_c  = float((~pc_on & t_on).sum())
-        f1_cls = 2 * tp_c / (2 * tp_c + fp_c + fn_c + 1e-8)
 
-    # ── 22종 개별 지표 ────────────────────────────────────────────────────────
+    # ── 22종 개별 지표 — val positive 없는 클래스 제외(macro F1 집계 대상에서) ──
     per_appliance = {}
     for i, name in enumerate(APPLIANCE_LABELS):
         col_valid = valid_arr[:, i] > 0
@@ -293,6 +281,11 @@ def evaluate(
         ti    = true_arr[col_valid, i]
         pi_on = pred_on[col_valid, i]
         ti_on = on_off_arr[col_valid, i].astype(bool)
+        if not ti_on.any():
+            per_appliance[name] = {"mae": float(np.abs(pi - ti).mean()),
+                                   "rmse": float(np.sqrt(((pi - ti) ** 2).mean())),
+                                   "f1": None, "f1_cls": None}
+            continue
         tp_i  = float((pi_on & ti_on).sum())
         fp_i  = float((pi_on & ~ti_on).sum())
         fn_i  = float((~pi_on & ti_on).sum())
@@ -309,6 +302,13 @@ def evaluate(
             "f1":    2 * tp_i / (2 * tp_i + fp_i + fn_i + 1e-8),
             "f1_cls": f1_cls_i,
         }
+
+    # macro F1 — val에 positive 있는 클래스만 평균
+    _f1_vals = [m["f1"] for m in per_appliance.values() if m["f1"] is not None]
+    f1 = float(np.mean(_f1_vals)) if _f1_vals else 0.0
+    if has_cls:
+        _f1_cls_vals = [m["f1_cls"] for m in per_appliance.values() if m["f1_cls"] is not None]
+        f1_cls = float(np.mean(_f1_cls_vals)) if _f1_cls_vals else None
 
     return {"mae": mae, "rmse": rmse, "sae": sae,
             "f1": f1, "f1_cls": f1_cls,
