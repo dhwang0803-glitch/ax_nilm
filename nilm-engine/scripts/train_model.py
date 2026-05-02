@@ -270,8 +270,10 @@ def evaluate(
             best_cls_thresholds = np.asarray(cls_thresholds)
         pred_on_cls = logit_arr >= best_cls_thresholds[np.newaxis, :]  # (N, 22)
 
-    # ── 22종 개별 지표 — val positive 없는 클래스 제외(macro F1 집계 대상에서) ──
+    # ── 22종 개별 지표 — val positive 없는 클래스 제외(weighted macro F1 집계 대상에서) ──
     per_appliance = {}
+    _f1_items: list[tuple[float, int]] = []      # (f1, n_positive) for weighted macro
+    _f1_cls_items: list[tuple[float, int]] = []
     for i, name in enumerate(APPLIANCE_LABELS):
         col_valid = valid_arr[:, i] > 0
         if not col_valid.any():
@@ -281,7 +283,8 @@ def evaluate(
         ti    = true_arr[col_valid, i]
         pi_on = pred_on[col_valid, i]
         ti_on = on_off_arr[col_valid, i].astype(bool)
-        if not ti_on.any():
+        n_pos = int(ti_on.sum())
+        if n_pos == 0:
             per_appliance[name] = {"mae": float(np.abs(pi - ti).mean()),
                                    "rmse": float(np.sqrt(((pi - ti) ** 2).mean())),
                                    "f1": None, "f1_cls": None}
@@ -289,6 +292,7 @@ def evaluate(
         tp_i  = float((pi_on & ti_on).sum())
         fp_i  = float((pi_on & ~ti_on).sum())
         fn_i  = float((~pi_on & ti_on).sum())
+        f1_i  = 2 * tp_i / (2 * tp_i + fp_i + fn_i + 1e-8)
         f1_cls_i = None
         if has_cls:
             pc_on_i = pred_on_cls[col_valid, i]
@@ -299,16 +303,25 @@ def evaluate(
         per_appliance[name] = {
             "mae":   float(np.abs(pi - ti).mean()),
             "rmse":  float(np.sqrt(((pi - ti) ** 2).mean())),
-            "f1":    2 * tp_i / (2 * tp_i + fp_i + fn_i + 1e-8),
+            "f1":    f1_i,
             "f1_cls": f1_cls_i,
         }
+        _f1_items.append((f1_i, n_pos))
+        if f1_cls_i is not None:
+            _f1_cls_items.append((f1_cls_i, n_pos))
 
-    # macro F1 — val에 positive 있는 클래스만 평균
-    _f1_vals = [m["f1"] for m in per_appliance.values() if m["f1"] is not None]
-    f1 = float(np.mean(_f1_vals)) if _f1_vals else 0.0
+    # weighted macro F1 — val positive 수에 비례한 가중 평균
+    if _f1_items:
+        _vals, _w = zip(*_f1_items)
+        f1 = float(np.average(_vals, weights=_w))
+    else:
+        f1 = 0.0
     if has_cls:
-        _f1_cls_vals = [m["f1_cls"] for m in per_appliance.values() if m["f1_cls"] is not None]
-        f1_cls = float(np.mean(_f1_cls_vals)) if _f1_cls_vals else None
+        if _f1_cls_items:
+            _vals, _w = zip(*_f1_cls_items)
+            f1_cls = float(np.average(_vals, weights=_w))
+        else:
+            f1_cls = None
 
     return {"mae": mae, "rmse": rmse, "sae": sae,
             "f1": f1, "f1_cls": f1_cls,
