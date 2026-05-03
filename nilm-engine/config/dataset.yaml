@@ -31,9 +31,9 @@ window:
   event_context: 60   # 가전별 gap_seconds 기반 동적 계산 — 이 값은 상한(cap). null 이면 전수 슬라이딩
   steady_stride: 600  # 정상 구간 20초마다 1개. null 이면 stride × 20 자동 설정
 
-# 멀티스케일 그룹별 설정 (NILMDataset의 resample_hz + appliance_group 파라미터에 대응)
-# A_heating + B_step → fast / C_cycle → slow / D_always → always_on
-groups:
+# 멀티스케일 그룹별 설정 — 현재 비활성 (단일 모델 사용)
+# 활성화 시 train_model.py가 그룹별 3개 모델로 분기됨 (단일 모델 목표와 상충)
+# groups_disabled:
   fast:
     resample_hz: 30
     window_size: 1024   # 34초 @ 30Hz

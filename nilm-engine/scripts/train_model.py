@@ -180,6 +180,7 @@ def evaluate(
     model_name: str,
     device: torch.device,
     cls_thresholds: np.ndarray | None = None,
+    postprocess_stride_sec: float | None = None,
 ) -> dict:
     """MAE / RMSE / SAE / R² (전체 평균 + 22종 개별) 계산 후 dict 반환.
 
@@ -228,6 +229,15 @@ def evaluate(
     raw_thr = np.array(get_on_thresholds(), dtype=np.float32)
     # target이 raw W → 임계도 raw W로 직접 비교
     pred_on = pred_arr >= raw_thr[np.newaxis, :]
+
+    # always_on 가전(냉장고/김치냉장고 등) — 분류 불필요, 항상 ON 고정
+    from postprocessor import ALWAYS_ON_IDX
+    pred_on[:, ALWAYS_ON_IDX] = True
+
+    # 예측 후처리: min_active spike 제거 + gap 메우기 (최종 eval 전용)
+    if postprocess_stride_sec is not None:
+        from postprocessor import apply_postprocess
+        pred_on = apply_postprocess(pred_on, stride_sec=postprocess_stride_sec)
 
     # cls 헤드 사용 가능 시 logit 기반 F1도 계산
     has_cls = len(all_fusion_logit) > 0
@@ -305,6 +315,7 @@ def evaluate(
             "rmse":  float(np.sqrt(((pi - ti) ** 2).mean())),
             "f1":    f1_i,
             "f1_cls": f1_cls_i,
+            "n_pos": n_pos,
         }
         _f1_items.append((f1_i, n_pos))
         if f1_cls_i is not None:
@@ -398,6 +409,244 @@ def train_one_epoch(
     return total_loss / max(len(loader), 1)
 
 
+# ── cnn_tda 그룹 단위 학습 헬퍼 ───────────────────────────────────────────────
+
+def _train_cnn_tda_group(
+    group_name: str,
+    group_cfg: dict,
+    exp: str,
+    resume_exp: str | None,
+    train_cfg: dict,
+    data_root: Path,
+    ckpt_dir: Path,
+    cache_dir: Path | None,
+    device: torch.device,
+    train_houses: list[str],
+    val_houses: list[str],
+    train_week: int | None,
+    train_date_range,
+    eval_date_range,
+    batch_size: int,
+    epochs: int,
+    patience: int,
+    lr_init: float,
+    wd: float,
+    lambda_mse: float,
+    pos_weight_max: float,
+    appliance_scale: torch.Tensor,
+) -> dict:
+    """cnn_tda 단일 speed group 학습 후 val_metrics 반환. 스케일러는 그룹별 독립 관리."""
+    from acquisition.preprocessor import PowerScaler
+
+    g_window    = group_cfg["window_size"]
+    g_stride    = group_cfg["stride"]
+    g_resample  = group_cfg["resample_hz"]
+    g_event_ctx = group_cfg.get("event_context")
+    g_steady    = group_cfg.get("steady_stride")
+
+    # ── scaler: resume 시 per-group 파일 우선, 없으면 fit ─────────────────────
+    group_scaler: PowerScaler | None = None
+    if resume_exp:
+        _prev_sc_path = ckpt_dir / f"{resume_exp}_cnn_tda_{group_name}_scaler.json"
+        if _prev_sc_path.exists():
+            group_scaler = PowerScaler.load(_prev_sc_path)
+            print(f"  [{group_name}] scaler 로드: mean={group_scaler.mean:.2f}W  std={group_scaler.std:.2f}W")
+
+    # ── Dataset ──────────────────────────────────────────────────────────────
+    if group_scaler is not None:
+        g_train_base = NILMDataset(
+            train_houses, data_root, g_window, g_stride,
+            date_range=train_date_range, week=train_week,
+            scaler=group_scaler, cache_dir=cache_dir,
+            event_context=g_event_ctx, steady_stride=g_steady,
+            resample_hz=g_resample, appliance_group=group_name,
+        )
+    else:
+        g_train_base = NILMDataset(
+            train_houses, data_root, g_window, g_stride,
+            date_range=train_date_range, week=train_week,
+            fit_scaler=True, cache_dir=cache_dir,
+            event_context=g_event_ctx, steady_stride=g_steady,
+            resample_hz=g_resample, appliance_group=group_name,
+        )
+        group_scaler = g_train_base.scaler
+
+    g_val_base = NILMDataset(
+        val_houses, data_root, g_window, g_stride,
+        date_range=eval_date_range,
+        scaler=group_scaler, cache_dir=cache_dir,
+        event_context=g_event_ctx, steady_stride=g_steady,
+        resample_hz=g_resample, appliance_group=group_name,
+    )
+
+    g_train_ds = _NILMDatasetWithTDA(g_train_base, cache_dir=cache_dir,
+                                      event_context=g_event_ctx, steady_stride=g_steady)
+    g_val_ds   = _NILMDatasetWithTDA(g_val_base,   cache_dir=cache_dir,
+                                      event_context=g_event_ctx, steady_stride=g_steady)
+    g_train_loader = DataLoader(g_train_ds, batch_size=batch_size, shuffle=True,
+                                num_workers=4, pin_memory=True)
+    g_val_loader   = DataLoader(g_val_ds,   batch_size=batch_size, shuffle=False,
+                                num_workers=4, pin_memory=True)
+    print(f"  [{group_name}] train={len(g_train_ds):,}  val={len(g_val_ds):,} windows")
+
+    # ── Model ─────────────────────────────────────────────────────────────────
+    model = CNNTDAHybrid(window_size=g_window).to(device)
+    lr = lr_init
+
+    if resume_exp:
+        prev_ckpt = ckpt_dir / f"{resume_exp}_cnn_tda_{group_name}.pt"
+        if prev_ckpt.exists():
+            _ckpt  = torch.load(prev_ckpt, map_location=device, weights_only=True)
+            _state = _ckpt["model_state"] if isinstance(_ckpt, dict) and "model_state" in _ckpt else _ckpt
+            model.load_state_dict(_state)
+            print(f"  [{group_name}] └─ 모델 로드: {prev_ckpt.name}")
+        else:
+            print(f"  [{group_name}] └─ 경고: {prev_ckpt.name} 없음 — 처음부터 학습")
+
+        _prev_m_path = ckpt_dir.parent / "docs" / "results" / f"{resume_exp}_cnn_tda_{group_name}_metrics.json"
+        if _prev_m_path.exists():
+            _prev_m = json.load(open(_prev_m_path))
+            lr = _prev_m.get("final_lr", lr)
+            print(f"  [{group_name}] └─ LR 이어받기: {lr:.2e}")
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min",
+        factor=train_cfg["scheduler"]["factor"],
+        patience=train_cfg["scheduler"]["patience"],
+    )
+
+    print(f"  [{group_name}] pos_weight 계산 중...")
+    pos_weight = compute_pos_weight(g_train_loader, device, max_weight=pos_weight_max)
+    # always_on 그룹은 분류 BCE 없이 회귀만 학습 (ON/OFF 분류 자체가 무의미)
+    _pw_train = None if group_name == "always_on" else pos_weight
+
+    # ── Training loop ─────────────────────────────────────────────────────────
+    amp_scaler          = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
+    best_score          = (-float("inf"), float("inf"))
+    best_cls_thresholds = np.zeros(N_APPLIANCES)
+    best_state          = None
+    no_improve          = 0
+    epoch_times: list[float] = []
+    t_start = time.perf_counter()
+
+    for epoch in range(1, epochs + 1):
+        t_ep = time.perf_counter()
+        train_loss = train_one_epoch(
+            model, g_train_loader, optimizer, "cnn_tda", device,
+            amp_scaler, pos_weight=_pw_train,
+            lambda_mse=lambda_mse, appliance_scale=appliance_scale,
+        )
+        epoch_times.append(time.perf_counter() - t_ep)
+
+        val_metrics = evaluate(model, g_val_loader, "cnn_tda", device)
+        val_mae     = val_metrics["mae"]
+        scheduler.step(val_mae)
+        lr_now = optimizer.param_groups[0]["lr"]
+
+        f1_cls_str = (f"  f1_cls={val_metrics['f1_cls']:.3f}"
+                      if val_metrics.get("f1_cls") is not None else "")
+        print(
+            f"  [{group_name}] epoch {epoch:3d}/{epochs}  "
+            f"loss={train_loss:.4f}  mae={val_mae:.2f}  "
+            f"f1={val_metrics['f1']:.3f}{f1_cls_str}  "
+            f"lr={lr_now:.2e}  time={epoch_times[-1]:.1f}s"
+        )
+
+        _f1_cls = val_metrics.get("f1_cls") or 0.0
+        _score  = (_f1_cls, -val_mae)
+        if _score > best_score or best_state is None:
+            best_score          = _score
+            best_cls_thresholds = np.array(val_metrics["best_cls_thresholds"])
+            best_state          = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            no_improve          = 0
+        else:
+            no_improve += 1
+            if no_improve >= patience:
+                print(f"  [{group_name}] 조기 종료: {patience} epoch 개선 없음")
+                break
+
+    total_time = time.perf_counter() - t_start
+    avg_ep     = sum(epoch_times) / len(epoch_times) if epoch_times else 0.0
+    print(f"  [{group_name}] 완료: 총 {total_time:.1f}s  에폭 평균 {avg_ep:.1f}s")
+
+    # ── Checkpoint ────────────────────────────────────────────────────────────
+    if best_state is not None:
+        model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
+
+    ckpt_path = ckpt_dir / f"{exp}_cnn_tda_{group_name}.pt"
+    torch.save({"model_state": model.state_dict(),
+                "best_cls_thresholds": best_cls_thresholds.tolist()}, ckpt_path)
+    print(f"  [{group_name}] 체크포인트: {ckpt_path.name}")
+
+    if group_scaler is not None:
+        group_scaler.save(ckpt_dir / f"{exp}_cnn_tda_{group_name}_scaler.json")
+
+    # ── Final evaluate ────────────────────────────────────────────────────────
+    _stride_sec = g_stride / g_resample
+    final_m = evaluate(model, g_val_loader, "cnn_tda", device,
+                       cls_thresholds=best_cls_thresholds,
+                       postprocess_stride_sec=_stride_sec)
+    final_m["group"]           = group_name
+    final_m["final_lr"]        = optimizer.param_groups[0]["lr"]
+    final_m["training_time_s"] = round(total_time, 1)
+    final_m["n_epochs"]        = len(epoch_times)
+
+    g_metrics_path = ckpt_dir.parent / "docs" / "results" / f"{exp}_cnn_tda_{group_name}_metrics.json"
+    g_metrics_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(g_metrics_path, "w", encoding="utf-8") as f:
+        json.dump(final_m, f, ensure_ascii=False, indent=2)
+    print(f"  [{group_name}] 그룹 지표 저장: {g_metrics_path.name}")
+
+    return final_m
+
+
+def _merge_group_metrics(group_metrics: dict[str, dict]) -> dict:
+    """fast/slow/always_on 그룹 지표를 합쳐 n_pos 가중 macro F1 재계산."""
+    merged_pa: dict[str, dict] = {}
+    for gm in group_metrics.values():
+        for name, app_m in gm.get("per_appliance", {}).items():
+            if app_m.get("f1") is not None:
+                merged_pa[name] = app_m
+
+    f1_items:     list[tuple[float, int]] = []
+    f1_cls_items: list[tuple[float, int]] = []
+    mae_items:    list[tuple[float, int]] = []
+    rmse_items:   list[tuple[float, int]] = []
+
+    for app_m in merged_pa.values():
+        n = max(app_m.get("n_pos", 1), 1)
+        if app_m.get("f1")     is not None: f1_items.append((app_m["f1"], n))
+        if app_m.get("f1_cls") is not None: f1_cls_items.append((app_m["f1_cls"], n))
+        if app_m.get("mae")    is not None: mae_items.append((app_m["mae"], n))
+        if app_m.get("rmse")   is not None: rmse_items.append((app_m["rmse"], n))
+
+    def _wavg(items: list[tuple[float, int]]) -> float:
+        if not items:
+            return 0.0
+        vals, ws = zip(*items)
+        return float(np.average(vals, weights=ws))
+
+    saes = [gm.get("sae", 0.0) for gm in group_metrics.values() if "sae" in gm]
+
+    # per_appliance 전체 22종 키 보장 (None 값으로 패딩)
+    full_pa = {name: merged_pa.get(name, {"mae": None, "rmse": None, "f1": None, "f1_cls": None})
+               for name in APPLIANCE_LABELS}
+
+    return {
+        "mae":  _wavg(mae_items),
+        "rmse": _wavg(rmse_items),
+        "sae":  float(np.mean(saes)) if saes else 0.0,
+        "f1":   _wavg(f1_items),
+        "f1_cls": _wavg(f1_cls_items) if f1_cls_items else None,
+        "per_appliance": full_pa,
+        "group_metrics": {
+            k: {kk: vv for kk, vv in v.items() if kk != "per_appliance"}
+            for k, v in group_metrics.items()
+        },
+    }
+
+
 # ── 메인 ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -458,6 +707,65 @@ def main():
             prev_scaler = PowerScaler.load(scaler_path)
             print(f"  └─ scaler 로드: mean={prev_scaler.mean:.2f}W  std={prev_scaler.std:.2f}W")
 
+    # ── cnn_tda multi-speed (dataset.yaml groups 설정 존재 시 우선 진입) ────────
+    if args.model == "cnn_tda" and "groups" in dataset_cfg:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        _app_index = {name: i for i, name in enumerate(APPLIANCE_LABELS)}
+        _scale_cfg = train_cfg.get("appliance_loss_scale", {})
+        appliance_scale = torch.ones(N_APPLIANCES, device=device)
+        for _name, _s in _scale_cfg.items():
+            if _name in _app_index:
+                appliance_scale[_app_index[_name]] = float(_s)
+                print(f"  appliance_loss_scale [{_name}]: ×{_s}")
+
+        all_group_metrics: dict[str, dict] = {}
+
+        for group_name, group_cfg in dataset_cfg["groups"].items():
+            print(f"\n{'='*60}")
+            print(f"  cnn_tda / {group_name}  "
+                  f"(window={group_cfg['window_size']}  hz={group_cfg['resample_hz']})")
+            print(f"{'='*60}")
+            g_metrics = _train_cnn_tda_group(
+                group_name=group_name,     group_cfg=group_cfg,
+                exp=args.exp,              resume_exp=resume_exp,
+                train_cfg=train_cfg,       data_root=data_root,
+                ckpt_dir=ckpt_dir,         cache_dir=cache_dir,
+                device=device,
+                train_houses=train_houses, val_houses=val_houses,
+                train_week=train_week,     train_date_range=train_date_range,
+                eval_date_range=eval_date_range,
+                batch_size=batch_size,     epochs=epochs,
+                patience=patience,         lr_init=lr,
+                wd=wd,                     lambda_mse=lambda_mse,
+                pos_weight_max=float(train_cfg["training"].get("pos_weight_max", 20.0)),
+                appliance_scale=appliance_scale,
+            )
+            all_group_metrics[group_name] = g_metrics
+
+        final_metrics = _merge_group_metrics(all_group_metrics)
+        final_metrics.update({
+            "exp":        args.exp,
+            "model":      args.model,
+            "date_range": list(train_date_range) if train_date_range else f"week={train_week}",
+        })
+
+        results_dir = _NILM_ROOT / "docs" / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = results_dir / f"{args.exp}_{args.model}_metrics.json"
+        with open(metrics_path, "w", encoding="utf-8") as f:
+            json.dump(final_metrics, f, ensure_ascii=False, indent=2)
+        print(f"  지표 저장: {metrics_path.relative_to(_NILM_ROOT)}")
+        _fill_md_row(args.exp, args.model, final_metrics, results_dir)
+
+        _cls = (f"  F1_cls={final_metrics['f1_cls']:.3f}"
+                if final_metrics.get("f1_cls") is not None else "")
+        print(f"\n[완료] {args.exp}/cnn_tda(multi-speed)  "
+              f"MAE={final_metrics['mae']:.4f}  RMSE={final_metrics['rmse']:.4f}  "
+              f"F1={final_metrics['f1']:.3f}{_cls}")
+        return final_metrics
+
+    # ── 기존 단일 모델 학습 (seq2point / bert4nilm / cnn_tda without groups) ───
     if prev_scaler is not None:
         base_train = NILMDataset(train_houses, data_root, window_size, stride,
                                  date_range=train_date_range, week=train_week,
@@ -627,8 +935,11 @@ def main():
         scaler_path = ckpt_dir / f"{args.exp}_{args.model}_scaler.json"
         base_train.scaler.save(scaler_path)
 
+    _sr = dataset_cfg["window"].get("sampling_rate", 30)
+    _stride_sec = stride / _sr
     final_metrics = evaluate(model, val_loader, args.model, device,
-                             cls_thresholds=best_cls_thresholds)
+                             cls_thresholds=best_cls_thresholds,
+                             postprocess_stride_sec=_stride_sec)
     final_metrics["exp"]             = args.exp
     final_metrics["model"]           = args.model
     final_metrics["date_range"]      = list(train_date_range) if train_date_range else f"week={train_week}"
