@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from classifier.label_map import APPLIANCE_LABELS, APPLIANCE_LABELING, SPEED_GROUP
+from classifier.label_map import APPLIANCE_LABELS, APPLIANCE_LABELING
 
-# always_on 가전 인덱스 — 냉장고/김치냉장고/공기청정기 등 (분류 불필요, 항상 ON 고정)
+# always_on 가전 인덱스 — threshold_kind=="always_on"인 냉장고 2종만
+# SPEED_GROUP "always_on"은 처리 그룹(1Hz 다운샘플)이며 항상 ON 고정 기준이 아님
 ALWAYS_ON_IDX: list[int] = [
     i for i, name in enumerate(APPLIANCE_LABELS)
-    if SPEED_GROUP.get(name) == "always_on"
+    if APPLIANCE_LABELING.get(name, {}).get("threshold_kind") == "always_on"
 ]
 
 
