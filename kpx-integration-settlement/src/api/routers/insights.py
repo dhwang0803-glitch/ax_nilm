@@ -77,8 +77,8 @@ def _weekly_trend(log_records: list[dict]) -> list[dict]:
 # ── 엔드포인트 ────────────────────────────────────────────────────
 
 @router.get("/insights/summary")
-def insights_summary():
-    hh = os.getenv("DEFAULT_HH", "HH001")
+def insights_summary(household_id: str = "HH001"):
+    hh = household_id
 
     events_data = get_anomaly_events(hh, status="active")
     log_data    = get_anomaly_log(hh)
