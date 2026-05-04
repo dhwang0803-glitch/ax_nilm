@@ -377,3 +377,100 @@ ADR-006 이 제안한 configurable dual-region (`asia-northeast3` + `us-central1
 - [x] `nilm/_manifests/training_dev10.json` 레이아웃 적용 (양 버킷)
 - [ ] 신규 데이터 업로드 시 양쪽 버킷 반영 헬퍼 스크립트 작성 (`Database/scripts/sync_buckets.sh` 가칭)
 - [ ] `convert_nilm.py` (레포 밖) 의 manifest 경로를 `nilm/_manifests/<subset>.json` 으로 업데이트
+
+---
+
+## ADR-008 — `appliance_status_codes` 시드 데이터 + `severity` 컬럼 추가 요청
+
+- **Status**: Partially Implemented — D1·D3 완료, D2 진행 중 (2026-05-03 기준)
+- **관련 브랜치**: `Database` (마이그레이션), `Frontend` (kpx-integration-settlement 쿼리 수정)
+- **구현 근거**: `kpx-integration-settlement/src/agent/data_tools.py` `_db_anomaly_events()` / `_db_anomaly_log()`
+- **상위 요구사항**: 루트 `CLAUDE.md` REQ-002 (이상 탐지 — LLM 진단 리포트, 심각도별 알림)
+
+### Context
+
+`004_nilm_inference_tables.sql` 에 `appliance_status_codes` 테이블이 정의되었고,
+이후 `20260426_07_seed_appliance_status_codes.sql` 로 **모델 팀 확정안(2026-04-26 회신) 기준
+13개 코드가 적재**되었다 (0~3 범용, 10~11 Type2, 20~22 Type3, 30~32 Type4).
+
+`kpx-integration-settlement` 에서 이상 탐지 API(`/api/insights/summary`, `/settings/anomaly-log`)를
+구현하면서 아래 두 쿼리가 해당 테이블에 LEFT JOIN 한다:
+
+```sql
+-- _db_anomaly_events(), _db_anomaly_log() 공통 패턴
+LEFT JOIN appliance_status_codes asc_
+    ON asc_.status_code = asi.status_code
+```
+
+kpx 쪽 쿼리가 `asc_.label` 을 참조했으나 실제 컬럼명은 `label_ko` 이므로
+**컬럼명 불일치 버그**가 존재했다 — `20260426_07` 마이그레이션 적용 시 쿼리 오류 발생 가능.
+해당 버그는 PR #58 (commit `b372e9a`) 에서 `asc_.label_ko` 로 수정 완료.
+
+또한 현재 스키마에 `severity` 컬럼이 없어, kpx 쪽은 `confidence` 값으로 심각도를
+휴리스틱 분류(≥ 0.85 → warning, < 0.85 → info)하는 상태다.
+
+### Decision
+
+**D1. ~~Database 팀 — 시드 마이그레이션 작성~~ → 완료**
+
+`20260426_07_seed_appliance_status_codes.sql` 로 이미 적용됨.
+모델 팀 확정 코드 체계:
+
+| 범위 | 타입 | 대표 코드 |
+|------|------|-----------|
+| 0–9 | 범용 / Type1 단일 ON/OFF | 0 off, 1 standby, 2 active, 3 peak |
+| 10–19 | Type2 복합 사이클 | 10 motor_active, 11 heater_active |
+| 20–29 | Type3 가변/온도 제어 (3-bucket) | 20 level_low, 21 level_mid, 22 level_high |
+| 30–39 | Type4 상시 전원/주기성 | 30 base_load, 31 compressor_on, 32 defrost |
+
+**D2. Database 팀 — `severity` 컬럼 추가 마이그레이션 (미완료)**
+
+`appliance_status_codes` 에 `severity TEXT NOT NULL DEFAULT 'info'` 컬럼을 추가해
+코드별 심각도를 테이블에서 관리한다.
+파일명은 Database 브랜치 컨벤션(`YYYYMMDD_NN_*.sql`)을 따른다.
+
+```sql
+-- 예시: Database/migrations/20260503_11_appliance_status_codes_severity.sql
+ALTER TABLE appliance_status_codes
+    ADD COLUMN IF NOT EXISTS severity TEXT NOT NULL DEFAULT 'info'
+        CHECK (severity IN ('info', 'warning', 'critical'));
+
+-- status_code 10(motor_active), 11(heater_active) 는 비정상 고부하 → warning
+UPDATE appliance_status_codes SET severity = 'warning' WHERE status_code IN (10, 11);
+```
+
+> **파일명 주의**: 실제 적용 시 당일 날짜와 브랜치 내 다음 시퀀스 번호로 확정할 것.
+
+**D3. kpx-integration-settlement 쪽 — SQL 컬럼명 수정 → 완료 (PR #58)**
+
+`asc_.label` → `asc_.label_ko` 수정 완료. D2 완료 후 confidence 휴리스틱을
+`asc_.severity` 로 교체 예정.
+
+### Consequences
+
+**Positive**
+
+- AI 진단 화면(`/insights`)과 이상 탐지 내역(`/settings/anomaly-log`)에서
+  가전별 이상 유형 한국어 명칭 표시 가능
+- severity 를 모델 팀이 코드 수준에서 정의 → kpx 쪽 휴리스틱 제거로 일관성 향상
+- LLM `run_insights()` 의 진단 품질 개선 (status_code 의미를 anomaly payload 에 포함 가능)
+
+**Negative / Trade-offs**
+
+- D2(severity 컬럼) 완료 전까지 심각도는 confidence 휴리스틱으로만 분류됨
+
+### Alternatives Considered
+
+| 대안 | 기각 사유 |
+|------|-----------|
+| kpx 에서 confidence 휴리스틱만 유지 (테이블 미사용) | status_code 의미를 코드에 하드코딩해야 하며, 모델 버전 업 시 동기화 불가 |
+| `label` 컬럼 추가 (기존 DDL 유지 + 알리아스) | 컬럼명 혼용 → 장기적으로 혼란. DDL 의도가 `label_en/label_ko` 분리이므로 그대로 사용 |
+| kpx 에서 status_code → label 매핑 딕셔너리 하드코딩 | 모델 팀과 동기화 포인트 이중 유지, 마이그레이션 없이도 코드 수정 필요 |
+
+### Follow-ups
+
+- [x] **[Database]** 모델 팀 `status_code` 세트 확인 — 2026-04-26 회신 완료
+- [x] **[Database]** 시드 마이그레이션 — `20260426_07_seed_appliance_status_codes.sql` 적용 완료 (13건)
+- [ ] **[Database]** severity 컬럼 추가 마이그레이션 — `YYYYMMDD_NN_appliance_status_codes_severity.sql`
+- [x] **[kpx]** `asc_.label` → `asc_.label_ko` 수정 — PR #58 commit `b372e9a` 완료
+- [ ] **[kpx]** D2 완료 후 confidence 휴리스틱 → `asc_.severity` 교체
