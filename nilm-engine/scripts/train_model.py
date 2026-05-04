@@ -78,9 +78,11 @@ class _NILMDatasetWithTDA(Dataset):
         if _need_compute:
             print(f"  TDA 사전 계산 중... ({n:,}개)", flush=True)
             from joblib import Parallel, delayed
-            signals = [base[i][0].numpy() for i in range(n)]
-            results = Parallel(n_jobs=-1, backend="loky")(
-                delayed(_compute_tda_one)(s) for s in signals
+            # contiguous shared array → threading 백엔드로 직렬화 오버헤드 제거
+            # (loky는 2GB+ 리스트를 cloudpickle로 복사 → window=1024에서 수십 분 낭비)
+            signals_arr = np.stack([base[i][0].numpy() for i in range(n)])
+            results = Parallel(n_jobs=-1, backend="threading")(
+                delayed(_compute_tda_one)(signals_arr[i]) for i in range(n)
             )
             self._tda = torch.from_numpy(np.stack(results))
             print("  TDA 사전 계산 완료", flush=True)
