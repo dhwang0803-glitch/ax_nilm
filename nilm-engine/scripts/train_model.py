@@ -230,9 +230,11 @@ def evaluate(
     # target이 raw W → 임계도 raw W로 직접 비교
     pred_on = pred_arr >= raw_thr[np.newaxis, :]
 
-    # always_on 가전(냉장고/김치냉장고 등) — 분류 불필요, 항상 ON 고정
+    # always_on 가전 — 이 house에 실제로 존재하는 경우(on_off_arr에 ON 구간 있음)만 고정
     from postprocessor import ALWAYS_ON_IDX
-    pred_on[:, ALWAYS_ON_IDX] = True
+    has_appliance = on_off_arr.any(axis=0)          # (N_APP,) bool
+    present_always_on = [i for i in ALWAYS_ON_IDX if has_appliance[i]]
+    pred_on[:, present_always_on] = True
 
     # 예측 후처리: min_active spike 제거 + gap 메우기 (최종 eval 전용)
     if postprocess_stride_sec is not None:

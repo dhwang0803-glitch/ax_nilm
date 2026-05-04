@@ -4,12 +4,11 @@ import numpy as np
 
 from classifier.label_map import APPLIANCE_LABELS, APPLIANCE_LABELING
 
-# always_on 가전 인덱스 — 일반 냉장고만
-# check_on_ratio 결과: 김치냉장고는 미보유 house에서 ON=0.318 → FP 유발
-# Tier2(보유 가전 등록 마스킹) 구현 전까지 일반 냉장고만 고정
+# always_on 가전 인덱스 — threshold_kind=="always_on"인 냉장고 2종
+# evaluate()에서 on_off_arr.any(axis=0)로 보유 여부를 먼저 확인한 뒤 적용
 ALWAYS_ON_IDX: list[int] = [
     i for i, name in enumerate(APPLIANCE_LABELS)
-    if name == "일반 냉장고"
+    if APPLIANCE_LABELING.get(name, {}).get("threshold_kind") == "always_on"
 ]
 
 
