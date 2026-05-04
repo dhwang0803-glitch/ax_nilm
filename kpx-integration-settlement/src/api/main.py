@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 
 # config/.env 우선 로드 (LANGCHAIN_*, OPENAI_API_KEY, DB_* 등)
-load_dotenv(Path(__file__).parents[3] / "config" / ".env")
+load_dotenv(Path(__file__).parents[2] / "config" / ".env")
 from fastapi.middleware.cors import CORSMiddleware
 from src.api.routers import auth, dashboard, usage, settings, cashback, insights
 

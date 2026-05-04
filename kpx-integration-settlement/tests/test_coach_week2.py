@@ -1,89 +1,31 @@
-"""통합 테스트 — coach.py Week 2 기능 (OpenAI mock 사용).
+"""통합 테스트 — LangGraph 멀티에이전트 (run_graph / supervisor_node / run_insights).
 
 실제 API 키 없이 테스트:
-- baseline 컨텍스트 주입 확인
-- tool 디스패치 + 익명화 + 트레이스 로깅 E2E 흐름
-- PII 경고 감지 및 반환
-- max_iterations 초과 시 빈 answer 반환
+- run_graph() 반환 스키마 확인
+- supervisor_node 의도별 라우팅 검증
+- run_insights() LLM 출력 스키마 + Pydantic 제약 확인
+- _safe_tool PII 스크럽 검증
 """
 from __future__ import annotations
 
 import json
 import os
-import types
 import unittest.mock as mock
-from typing import Any
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from pydantic import ValidationError
 
-from src.agent.coach import run_coach
-from src.agent.context_engine import build_smart_context
-
-
-# ─── 헬퍼: OpenAI 응답 픽스처 ────────────────────────────────────────────────────
-
-def _make_tool_call_choice(tool_name: str, args: dict) -> Any:
-    """LLM이 tool을 호출하는 응답 객체를 모의 생성."""
-    tc = mock.MagicMock()
-    tc.id = f"call_{tool_name}"
-    tc.function.name      = tool_name
-    tc.function.arguments = json.dumps(args, ensure_ascii=False)
-
-    choice = mock.MagicMock()
-    choice.finish_reason = "tool_calls"
-    choice.message.tool_calls = [tc]
-    choice.message.content    = None
-
-    resp = mock.MagicMock()
-    resp.choices = [choice]
-    resp.usage   = None
-    return resp
+from src.agent.graph import (
+    ALL_TOOLS,
+    InsightsLLMOutput,
+    _safe_tool,
+    run_graph,
+    run_insights,
+)
 
 
-def _make_final_answer_choice(content: dict) -> Any:
-    """LLM이 최종 답변을 반환하는 응답 객체를 모의 생성."""
-    choice = mock.MagicMock()
-    choice.finish_reason          = "stop"
-    choice.message.tool_calls     = []
-    choice.message.content        = json.dumps(content, ensure_ascii=False)
-
-    usage = mock.MagicMock()
-    usage.prompt_tokens     = 200
-    usage.completion_tokens = 100
-    usage.total_tokens      = 300
-
-    resp = mock.MagicMock()
-    resp.choices = [choice]
-    resp.usage   = usage
-    return resp
-
-
-# ─── build_smart_context ─────────────────────────────────────────────────────────
-
-class TestBuildSmartContext:
-    def test_returns_string(self) -> None:
-        ctx = build_smart_context("HH001", "전기료 줄이려면?")
-        assert isinstance(ctx, str)
-        assert len(ctx) > 0
-
-    def test_contains_baseline_header(self) -> None:
-        ctx = build_smart_context("HH001", "요금제 알려줘")
-        assert "[현재 가구 baseline" in ctx
-
-    def test_contains_summary_lines(self) -> None:
-        ctx = build_smart_context("HH002", "이번 주 소비량")
-        assert "- " in ctx
-
-    def test_unknown_household_still_returns_string(self) -> None:
-        ctx = build_smart_context("HH999", "질문")
-        assert isinstance(ctx, str)
-
-    def test_intent_injected_in_header(self) -> None:
-        ctx = build_smart_context("HH001", "요금 단계 알려줘")
-        assert "의도:" in ctx
-
-
-# ─── run_coach — mock 통합 테스트 ────────────────────────────────────────────────
+# ─── 픽스처 ───────────────────────────────────────────────────────────────────
 
 FINAL_ANSWER = {
     "recommendations": ["저녁 10시 이후 세탁기 사용 권장"],
@@ -97,209 +39,222 @@ def mock_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-dummy")
 
 
-class TestRunCoachDirectAnswer:
-    """LLM이 tool 없이 바로 답변하는 케이스."""
+def _graph_state(answer: dict, agent: str = "cashback", extra_messages: list | None = None) -> dict:
+    """graph.invoke 반환값 픽스처."""
+    msgs = [HumanMessage(content="질문"), *(extra_messages or []),
+            AIMessage(content=json.dumps(answer, ensure_ascii=False))]
+    return {
+        "messages": msgs,
+        "household_id": "HH001",
+        "next": agent,
+        "worker_results": [{"agent": agent, "output": json.dumps(answer, ensure_ascii=False)}],
+    }
 
-    def test_basic_return_schema(self, mock_env: None, tmp_path: str) -> None:
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료 줄이는 방법?", log_dir=str(tmp_path), use_graph=False)
 
-        assert "answer"      in result
-        assert "tool_calls"  in result
-        assert "iterations"  in result
-        assert "session_id"  in result
-        assert "trace_path"  in result
-        assert "pii_warnings" in result
-        assert "validation"  in result
+def _mock_insights_llm(output: InsightsLLMOutput):
+    """run_insights() 내부 _llm() 호출을 모의."""
+    m = mock.MagicMock()
+    m.with_structured_output.return_value.invoke.return_value = output
+    return m
 
-    def test_answer_parsed_correctly(self, mock_env: None, tmp_path: str) -> None:
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
 
-        assert result["answer"]["recommendations"] == ["저녁 10시 이후 세탁기 사용 권장"]
-        assert result["iterations"] == 1
+def _sample_insights() -> InsightsLLMOutput:
+    return InsightsLLMOutput(
+        anomaly_diagnoses=[
+            {"event_id": "E001", "diagnosis": "평균 대비 30% 높은 소비.", "action": "필터 점검"},
+        ],
+        recommendations=[
+            {"title": "저녁 세탁기 사용 조정", "savings_kwh": 2.5, "savings_krw": 250},
+            {"title": "에어컨 설정 온도 1도 상향",  "savings_kwh": 1.2, "savings_krw": 120},
+            {"title": "대기전력 차단 멀티탭 사용",  "savings_kwh": 0.8, "savings_krw": 80},
+        ],
+    )
 
-    def test_trace_file_created(self, mock_env: None, tmp_path: str) -> None:
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
+
+# ─── run_graph 반환 스키마 ─────────────────────────────────────────────────────
+
+class TestRunGraph:
+    def test_return_schema(self, mock_env: None, tmp_path) -> None:
+        with mock.patch("src.agent.graph._get_graph") as mg:
+            mg.return_value.invoke.return_value = _graph_state(FINAL_ANSWER)
+            result = run_graph("HH001", "전기료 줄이는 방법?", log_dir=str(tmp_path))
+
+        for key in ("answer", "tool_calls", "iterations", "session_id", "trace_path", "pii_warnings", "validation"):
+            assert key in result
+
+    def test_session_id_propagated(self, mock_env: None, tmp_path) -> None:
+        with mock.patch("src.agent.graph._get_graph") as mg:
+            mg.return_value.invoke.return_value = _graph_state(FINAL_ANSWER)
+            result = run_graph("HH001", "전기료?", session_id="fixed-sid", log_dir=str(tmp_path))
+
+        assert result["session_id"] == "fixed-sid"
+
+    def test_non_json_answer_wrapped_in_raw_text(self, mock_env: None, tmp_path) -> None:
+        state = {
+            "messages": [HumanMessage(content="질문"), AIMessage(content="절감 가능합니다.")],
+            "household_id": "HH001",
+            "next": "profile",
+            "worker_results": [],
+        }
+        with mock.patch("src.agent.graph._get_graph") as mg:
+            mg.return_value.invoke.return_value = state
+            result = run_graph("HH001", "질문", log_dir=str(tmp_path))
+
+        assert "raw_text" in result["answer"]
+
+    def test_tool_messages_collected(self, mock_env: None, tmp_path) -> None:
+        tool_msg = ToolMessage(
+            content=json.dumps({"summary": "전력 정보", "raw": []}, ensure_ascii=False),
+            tool_call_id="call_1",
+        )
+        with mock.patch("src.agent.graph._get_graph") as mg:
+            mg.return_value.invoke.return_value = _graph_state(FINAL_ANSWER, extra_messages=[tool_msg])
+            result = run_graph("HH001", "전기료?", log_dir=str(tmp_path))
+
+        assert len(result["tool_calls"]) == 1
+
+    def test_iterations_counts_ai_messages(self, mock_env: None, tmp_path) -> None:
+        state = {
+            "messages": [
+                HumanMessage(content="질문"),
+                AIMessage(content="중간 추론"),
+                AIMessage(content=json.dumps(FINAL_ANSWER, ensure_ascii=False)),
+            ],
+            "household_id": "HH001",
+            "next": "cashback",
+            "worker_results": [],
+        }
+        with mock.patch("src.agent.graph._get_graph") as mg:
+            mg.return_value.invoke.return_value = state
+            result = run_graph("HH001", "질문", log_dir=str(tmp_path))
+
+        assert result["iterations"] == 2
+
+    def test_trace_file_created(self, mock_env: None, tmp_path) -> None:
+        with mock.patch("src.agent.graph._get_graph") as mg:
+            mg.return_value.invoke.return_value = _graph_state(FINAL_ANSWER)
+            result = run_graph("HH001", "전기료?", log_dir=str(tmp_path))
 
         assert result["trace_path"] is not None
         assert os.path.exists(result["trace_path"])
 
-    def test_no_pii_warnings_for_clean_tools(self, mock_env: None, tmp_path: str) -> None:
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
 
-        assert result["pii_warnings"] == []
+# ─── 단일 에이전트 도구 구성 ──────────────────────────────────────────────────
 
-    def test_session_id_propagated(self, mock_env: None, tmp_path: str) -> None:
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", session_id="fixed-sid", log_dir=str(tmp_path), use_graph=False)
+class TestAllTools:
+    """단일 에이전트에 모든 도구가 연결됐는지 확인."""
 
-        assert result["session_id"] == "fixed-sid"
+    EXPECTED_TOOLS = {
+        "get_consumption_summary",
+        "get_hourly_appliance_breakdown",
+        "get_weather",
+        "get_forecast",
+        "get_cashback_history",
+        "get_tariff_info",
+        "get_anomaly_events",
+        "get_anomaly_log",
+        "get_household_profile",
+        "get_dashboard_summary",
+    }
 
-    def test_non_json_answer_wrapped(self, mock_env: None, tmp_path: str) -> None:
-        """LLM이 JSON이 아닌 텍스트를 반환할 때 raw_text로 감싸기."""
-        choice = mock.MagicMock()
-        choice.finish_reason      = "stop"
-        choice.message.tool_calls = []
-        choice.message.content    = "절감 가능합니다."
-        resp = mock.MagicMock()
-        resp.choices = [choice]
-        resp.usage   = None
+    def test_all_tools_registered(self) -> None:
+        tool_names = {t.name for t in ALL_TOOLS}
+        assert tool_names == self.EXPECTED_TOOLS
 
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), use_graph=False)
+    def test_tool_count(self) -> None:
+        assert len(ALL_TOOLS) == 10
 
-        assert "raw_text" in result["answer"]
-
-
-class TestRunCoachWithToolCalls:
-    """LLM이 tool을 1회 호출 후 최종 답변을 반환하는 케이스."""
-
-    def test_tool_call_then_answer(self, mock_env: None, tmp_path: str) -> None:
-        tool_resp  = _make_tool_call_choice("get_tariff_info", {"household_id": "HH001"})
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
-            result = run_coach("HH001", "요금제 알려줘", log_dir=str(tmp_path), use_graph=False)
-
-        assert result["iterations"] == 2
-        assert len(result["tool_calls"]) == 1
-        assert result["tool_calls"][0].tool == "get_tariff_info"
-
-    def test_household_id_not_in_trace_file(self, mock_env: None, tmp_path: str) -> None:
-        """트레이스 파일에 원본 household_id가 없어야 한다."""
-        tool_resp  = _make_tool_call_choice("get_tariff_info", {"household_id": "HH001"})
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
-            result = run_coach("HH001", "요금제?", log_dir=str(tmp_path), use_graph=False)
-
-        trace_content = open(result["trace_path"], encoding="utf-8").read()
-        assert "HH001" not in trace_content
+    def test_all_tools_are_safe_wrapped(self) -> None:
+        from langchain_core.tools import StructuredTool
+        for tool in ALL_TOOLS:
+            assert isinstance(tool, StructuredTool)
 
 
-class TestRunCoachPiiWarnings:
-    """tool이 PII 필드를 포함한 데이터를 반환할 때 경고가 수집되는지 확인."""
+# ─── run_insights 출력 스키마 + Pydantic 제약 ─────────────────────────────────
 
-    def test_pii_in_tool_result_triggers_warning(self, mock_env: None, tmp_path: str) -> None:
-        tool_resp  = _make_tool_call_choice("get_household_profile", {"household_id": "HH001"})
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
+class TestRunInsights:
+    def _run(self, mock_env) -> InsightsLLMOutput:
+        output = _sample_insights()
+        with mock.patch("src.agent.graph.get_anomaly_events", return_value={"raw": []}):
+            with mock.patch("src.agent.graph.get_anomaly_log", return_value={"raw": []}):
+                with mock.patch("src.agent.graph._llm", return_value=_mock_insights_llm(output)):
+                    return run_insights("HH001")
 
-        pii_result = {"summary": "테스트", "real_name": "홍길동", "raw": {}}
+    def test_return_type(self, mock_env: None) -> None:
+        assert isinstance(self._run(mock_env), InsightsLLMOutput)
 
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
-            with mock.patch("src.agent.coach._dispatch_tool", return_value=pii_result):
-                result = run_coach("HH001", "프로필?", log_dir=str(tmp_path), use_graph=False)
+    def test_recommendations_count_3_to_5(self, mock_env: None) -> None:
+        result = self._run(mock_env)
+        assert 3 <= len(result.recommendations) <= 5
 
-        assert "real_name" in result["pii_warnings"]
+    def test_savings_kwh_in_range(self, mock_env: None) -> None:
+        for rec in self._run(mock_env).recommendations:
+            assert 0.1 <= rec.savings_kwh <= 10.0
 
-    def test_pii_scrubbed_in_llm_message(self, mock_env: None, tmp_path: str) -> None:
-        """PII가 감지돼도 스크럽된 버전이 LLM에 전달되는지 확인 (messages 리스트 검사)."""
-        tool_resp  = _make_tool_call_choice("get_household_profile", {"household_id": "HH001"})
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
+    def test_savings_krw_in_range(self, mock_env: None) -> None:
+        for rec in self._run(mock_env).recommendations:
+            assert 10 <= rec.savings_krw <= 3000
 
-        pii_result = {"summary": "테스트", "real_name": "홍길동", "raw": {}}
-        captured_messages: list = []
+    def test_action_max_15_chars(self, mock_env: None) -> None:
+        for diag in self._run(mock_env).anomaly_diagnoses:
+            assert len(diag.action) <= 15
 
-        def capture_create(**kwargs):
-            captured_messages.extend(kwargs.get("messages", []))
-            side = [tool_resp, final_resp]
-            return side.pop(0)
+    def test_diagnosis_max_100_chars(self, mock_env: None) -> None:
+        for diag in self._run(mock_env).anomaly_diagnoses:
+            assert len(diag.diagnosis) <= 100
 
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
-            with mock.patch("src.agent.coach._dispatch_tool", return_value=pii_result):
-                result = run_coach("HH001", "프로필?", log_dir=str(tmp_path), use_graph=False)
+    def test_pydantic_rejects_kwh_out_of_range(self) -> None:
+        with pytest.raises(ValidationError):
+            InsightsLLMOutput(
+                anomaly_diagnoses=[],
+                recommendations=[
+                    {"title": "테스트",  "savings_kwh": 99.0, "savings_krw": 9900},
+                    {"title": "테스트2", "savings_kwh": 1.0,  "savings_krw": 100},
+                    {"title": "테스트3", "savings_kwh": 1.0,  "savings_krw": 100},
+                ],
+            )
 
-        # LLM으로 전달된 tool 메시지 중 "홍길동"이 없어야 함
-        tool_messages = [m for m in result["tool_calls"] if hasattr(m, "result")]
-        for tc in result["tool_calls"]:
-            assert "홍길동" not in json.dumps(tc.result, ensure_ascii=False)
+    def test_pydantic_rejects_too_few_recommendations(self) -> None:
+        with pytest.raises(ValidationError):
+            InsightsLLMOutput(
+                anomaly_diagnoses=[],
+                recommendations=[
+                    {"title": "테스트",  "savings_kwh": 1.0, "savings_krw": 100},
+                    {"title": "테스트2", "savings_kwh": 1.0, "savings_krw": 100},
+                ],
+            )
 
-
-class TestRunCoachMaxIterations:
-    """max_iterations 소진 시 빈 answer 반환."""
-
-    def test_max_iter_returns_empty_answer(self, mock_env: None, tmp_path: str) -> None:
-        tool_resp = _make_tool_call_choice("get_tariff_info", {"household_id": "HH001"})
-
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = tool_resp
-            result = run_coach("HH001", "질문", max_iterations=2, log_dir=str(tmp_path), use_graph=False)
-
-        assert result["answer"] == {}
-        assert result["iterations"] == 2
-
-    def test_trace_saved_even_on_max_iter(self, mock_env: None, tmp_path: str) -> None:
-        tool_resp = _make_tool_call_choice("get_tariff_info", {"household_id": "HH001"})
-
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = tool_resp
-            result = run_coach("HH001", "질문", max_iterations=1, log_dir=str(tmp_path), use_graph=False)
-
-        assert os.path.exists(result["trace_path"])
+    def test_pydantic_rejects_krw_too_low(self) -> None:
+        with pytest.raises(ValidationError):
+            InsightsLLMOutput(
+                anomaly_diagnoses=[],
+                recommendations=[
+                    {"title": "테스트",  "savings_kwh": 1.0, "savings_krw": 5},
+                    {"title": "테스트2", "savings_kwh": 1.0, "savings_krw": 100},
+                    {"title": "테스트3", "savings_kwh": 1.0, "savings_krw": 100},
+                ],
+            )
 
 
-class TestRunCoachHitl:
-    """HITL 콜백 — before_tool / before_answer 중단 동작 확인."""
+# ─── _safe_tool PII 스크럽 ────────────────────────────────────────────────────
 
-    def test_before_tool_reject_injects_error_response(self, mock_env: None, tmp_path: str) -> None:
-        """before_tool이 False를 반환하면 tool 결과로 E_HITL_REJECTED가 주입된다."""
-        tool_resp  = _make_tool_call_choice("get_tariff_info", {"household_id": "HH001"})
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
+class TestSafeToolPii:
+    """_safe_tool 래퍼가 tool 반환값에서 PII를 스크럽하는지 확인."""
 
-        rejected_tools: list[str] = []
+    def test_pii_value_scrubbed(self) -> None:
+        def fake_tool(household_id: str) -> dict:
+            """테스트용 PII 포함 도구."""
+            return {"summary": "테스트", "real_name": "홍길동", "raw": {}}
 
-        def hitl(stage: str, payload: dict) -> bool:
-            if stage == "before_tool":
-                rejected_tools.append(payload["tool"])
-                return False
-            return True
+        safe = _safe_tool(fake_tool)
+        result = safe.invoke({"household_id": "HH001"})
+        assert "홍길동" not in json.dumps(result, ensure_ascii=False)
 
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.side_effect = [tool_resp, final_resp]
-            result = run_coach("HH001", "요금제?", log_dir=str(tmp_path), hitl_callback=hitl, use_graph=False)
+    def test_clean_output_passes_through(self) -> None:
+        def fake_tool(household_id: str) -> dict:
+            """테스트용 정상 도구."""
+            return {"summary": "정상 데이터", "raw": {"kwh": 42.0}}
 
-        assert "get_tariff_info" in rejected_tools
-        # tool이 거부돼도 agent loop는 계속 돌아 최종 답변을 받는다
-        assert result["answer"] != {}
-
-    def test_before_answer_reject_returns_empty(self, mock_env: None, tmp_path: str) -> None:
-        """before_answer가 False를 반환하면 answer={}로 즉시 반환된다."""
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-
-        def hitl(stage: str, payload: dict) -> bool:
-            return stage != "before_answer"
-
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), hitl_callback=hitl, use_graph=False)
-
-        assert result["answer"] == {}
-
-    def test_hitl_none_does_not_affect_normal_flow(self, mock_env: None, tmp_path: str) -> None:
-        """hitl_callback=None이면 기존 동작과 동일하다."""
-        final_resp = _make_final_answer_choice(FINAL_ANSWER)
-
-        with mock.patch("src.agent.coach.OpenAI") as MockClient:
-            MockClient.return_value.chat.completions.create.return_value = final_resp
-            result = run_coach("HH001", "전기료?", log_dir=str(tmp_path), hitl_callback=None, use_graph=False)
-
-        assert result["answer"]["recommendations"] == FINAL_ANSWER["recommendations"]
-        assert "validation" in result
+        safe = _safe_tool(fake_tool)
+        result = safe.invoke({"household_id": "HH001"})
+        assert result["raw"]["kwh"] == 42.0
