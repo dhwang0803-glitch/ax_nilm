@@ -1,14 +1,14 @@
 training:
-  epochs: 15
+  epochs: 25             # 15 → 25: window=1024 scratch 수렴에 더 많은 epoch 확보
   batch_size: 256        # seq2point, cnn_tda 기본값
   batch_size_bert: 64   # bert4nilm: window=1024 quadratic attention 메모리 제약
-  learning_rate: 0.001
-  resume_lr_factor: 0.2   # resume 시 LR 배율 (0.001 × 0.2 = 0.0002)
+  learning_rate: 0.0005  # 0.001 → 0.0005: EXP1 scratch 안정적 수렴
+  resume_lr_factor: 0.2   # resume 시 LR 배율 (0.0005 × 0.2 = 0.0001)
   early_stopping_patience: 5
   pos_weight_max: 50        # pos_weight clamp 상한 (기존 20 → 희귀 이벤트 가전 커버)
   loss_weights:
-    mse: 0.0001  # lambda_mse — raw W 타깃 기준 (MSE~40000W² → 4.0 수준으로 BCE와 균형)
-    bce: 1.0     # cnn_tda ON/OFF 분류 로짓 BCE 가중치
+    mse: 0.00005  # 0.0001 → 0.00005: 냉장고 등 고전력 가전 MSE 폭발 완화
+    bce: 1.0      # cnn_tda ON/OFF 분류 로짓 BCE 가중치
 
 optimizer:
   name: "adam"

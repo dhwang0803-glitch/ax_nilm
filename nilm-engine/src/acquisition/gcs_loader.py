@@ -252,8 +252,9 @@ class GCSNILMDataset(Dataset):
         ).hexdigest()[:12]
 
         # 주차/기간 파라미터 해시 — house별 캐시 파일명에 사용
+        # window_size/stride 제외: npz는 raw segments만 저장, window_index는 항상 재생성
         _week_key = hashlib.md5(
-            f"{date_range}|{week}|{max_week}|{window_size}|{stride}|{bucket_prefix}|{denoise}".encode()
+            f"{date_range}|{week}|{max_week}|{bucket_prefix}|{denoise}".encode()
         ).hexdigest()[:8]
 
         self._segments: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
