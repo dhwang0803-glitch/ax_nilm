@@ -1,222 +1,134 @@
-# NILM 모델 비교 실험 결과
+# NILM 모델 실험 결과 (cnn_tda)
 
-> **현재 환경**: AIHub 한국 가정 전력 데이터 30Hz · 3모델 주차별 추가학습 비교
+> 데이터: AIHub 한국 가정 전력 (30Hz, 9월)
+> Train: house_011,015,016,017,033,039,054,063 (8가구)
+> Val: house_049 (전체 기간 고정)
+> Test: house_067 (EXP4 완료 후 1회)
 
 ---
 
-## 환경 설정
+## 실험 이력
+
+| 차수 | window_size | Drive 폴더 | 주요 변경 |
+|------|------------|-----------|---------|
+| **Run 1** | 60 samples (2초) | nilm/ | 초기 실험 |
+| **Run 2** | 1024 samples (34초) | nilm_v2/ | window 확대, ALWAYS_ON_IDX 수정 (5종→냉장고2종+보유여부), postprocessor 추가 |
+
+---
+
+## Run 1 — window=60
+
+### 환경 설정
 
 | 항목 | 값 |
 |------|-----|
-| 데이터셋 | AIHub 한국 가정 전력 데이터 (30Hz) |
-| train houses | house_067, 004, 024, 036, 042, 045, 068, 109 (8가구) |
-| val house | house_011 |
-| test house | house_007 |
-| 입력 | ch01 active_power (aggregate) |
-| window_size | 1024 samples (≈34초 @ 30Hz) |
-| stride | 30 samples (1초) |
-| optimizer | Adam |
-| learning_rate | 1e-3 |
-| batch_size | 32 |
-| epochs | 50 (early stopping patience=10) |
-| loss | MSE (validity mask 적용) |
-| 평가 지표 | MAE (W) / RMSE (W) / SAE / R² |
-| 학습 환경 | Google Colab T4 GPU |
+| 모델 | cnn_tda |
+| window_size | 60 samples (2초 @ 30Hz) |
+| stride | 30 samples |
+| optimizer | Adam (lr=1e-3, wd=1e-4) |
+| scheduler | ReduceLROnPlateau (factor=0.5, patience=3) |
+| batch_size | 64 |
+| epochs | 15 (early stopping patience=5) |
+| 학습 환경 | Google Colab A100 GPU |
+
+### Val 결과 요약 (house_049)
+
+| EXP | 학습 주차 | 이전 EXP | MAE (W) ↓ | RMSE (W) ↓ | SAE ↓ | F1 ↑ | F1_cls ↑ | 학습시간 |
+|-----|----------|---------|-----------|------------|-------|------|----------|---------|
+| EXP1 | week 1 | scratch | 49.07 | 123.21 | 2.559 | 0.255 | 0.368 | 1210s |
+| EXP2 | week 2 | EXP1 | **40.44** | **106.24** | **2.075** | 0.577 | **0.639** | 546s |
+| EXP3 | week 3 | EXP2 | 48.39 | 115.76 | 2.458 | **0.578** | 0.633 | 527s |
+| EXP4 | week 4 | EXP3 | 49.31 | 111.97 | 2.595 | 0.576 | 0.620 | 854s |
+
+### Test 결과 (house_067, EXP4 체크포인트)
+
+| MAE (W) | RMSE (W) | SAE | F1 | F1_cls |
+|---------|----------|-----|----|--------|
+| 45.38 | 101.83 | 2.407 | **0.619** | 0.499 |
 
 ---
 
-## 실험 결과 요약
+## Run 2 — window=1024
 
-| EXP | 학습 기간 | 모델 | 종료 epoch | best_epoch | val_MAE | MAE (W) ↓ | RMSE (W) ↓ | SAE ↓ | R² ↑ | 비고 |
-|-----|----------|------|-----------|-----------|---------|-----------|------------|-------|------|------|
-| EXP1 | 09-22~09-28 | seq2point | | | | | | | | baseline ☆ |
-| EXP1 | 09-22~09-28 | bert4nilm | | | | | | | | |
-| EXP1 | 09-22~09-28 | cnn_tda   | | | | | | | | |
-| EXP2 | 09-29~10-05 | seq2point | | | | | | | | |
-| EXP2 | 09-29~10-05 | bert4nilm | | | | | | | | |
-| EXP2 | 09-29~10-05 | cnn_tda   | | | | | | | | |
-| EXP3 | 10-06~10-12 | seq2point | | | | | | | | |
-| EXP3 | 10-06~10-12 | bert4nilm | | | | | | | | |
-| EXP3 | 10-06~10-12 | cnn_tda   | | | | | | | | |
-| EXP4 | 10-13~10-19 | seq2point | | | | | | | | |
-| EXP4 | 10-13~10-19 | bert4nilm | | | | | | | | |
-| EXP4 | 10-13~10-19 | cnn_tda   | | | | | | | | |
+### 환경 설정 변경사항 (Run 1 대비)
 
----
+| 항목 | Run 1 | Run 2 |
+|------|-------|-------|
+| window_size | 60 samples | **1024 samples (34초)** |
+| stride | 30 samples | 30 samples (동일) |
+| ALWAYS_ON_IDX | SPEED_GROUP 기준 5종 | **threshold_kind 기준 냉장고 2종 + 보유여부 체크** |
+| postprocessor | 없음 | **gap fill + spike 제거 (가전별 룰)** |
+| Drive 폴더 | nilm/ | **nilm_v2/** |
+| TDA 백엔드 | loky | **threading (직렬화 오버헤드 제거)** |
 
-## EXP1 — 2023-09-22 ~ 2023-09-28 (scratch)
+### Val 결과 요약 (house_049)
 
-### seq2point
+| EXP | 학습 주차 | MAE (W) ↓ | RMSE (W) ↓ | SAE ↓ | F1 ↑ | F1_cls ↑ | 학습시간 |
+|-----|----------|-----------|------------|-------|------|----------|---------|
+| EXP1 | week 1 | 538.22 ⚠️ | 1040.46 ⚠️ | 41.797 ⚠️ | 0.579 | 0.551 | 507s |
+| EXP2 | week 2 | 51.53 | 139.77 | 2.990 | 0.597 | **0.639** | 826s |
+| EXP3 | week 3 | **41.54** | **108.39** | **2.342** | **0.599** | 0.626 | 541s |
+| EXP4 | week 4 | 47.10 | 119.77 | 2.524 | 0.578 | 0.626 | 528s |
 
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
+> ⚠️ **EXP1 MAE 이상값**: regression 헤드가 week=1 단독으로 수렴 실패. F1=0.579은 정상 (분류는 처음부터 잘 됨). EXP2부터 정상화.
 
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² |
-|-----------|---------|---------|----------|-----|----|
-| | | | | | |
+### Test 결과 (house_067, EXP4 체크포인트)
 
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP1/seq2point
-
----
-
-### bert4nilm
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² |
-|-----------|---------|---------|----------|-----|----|
-| | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP1/bert4nilm
+| MAE (W) | RMSE (W) | SAE | F1 | F1_cls |
+|---------|----------|-----|----|--------|
+| 49.13 | 124.48 | 2.716 | 0.613 | **0.640** |
 
 ---
 
-### cnn_tda
+## Run 1 vs Run 2 비교 (Test 기준)
 
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
+| 지표 | Run 1 (w=60) | Run 2 (w=1024) | 변화 |
+|------|-------------|---------------|------|
+| MAE (W) | **45.38** | 49.13 | ↑ 8.3% 악화 |
+| RMSE (W) | **101.83** | 124.48 | ↑ 22% 악화 |
+| SAE | **2.407** | 2.716 | ↑ 12.7% 악화 |
+| F1 | **0.619** | 0.613 | ↓ 1% 소폭 악화 |
+| F1_cls | 0.499 | **0.640** | ↑ 28% 개선 |
 
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² |
-|-----------|---------|---------|----------|-----|----|
-| | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP1/cnn_tda
-
----
-
-## EXP2 — 2023-09-29 ~ 2023-10-05 (EXP1 이어받기)
-
-### seq2point
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP1 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP2/seq2point
+> window=1024가 F1_cls(가전별 분류 정확도)는 크게 개선했으나 regression(전력량 추정) 및 전체 F1은 오히려 악화.
+> EXP1 regression 미수렴이 이후 EXP에도 누적 영향을 미쳤을 가능성 있음.
 
 ---
 
-### bert4nilm
+## 가전별 주요 성능 (Test, EXP4) — Run 2
 
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP1 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP2/bert4nilm
-
----
-
-### cnn_tda
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP1 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP2/cnn_tda
+| 가전 | F1 | F1_cls | n_pos | 비고 |
+|------|-----|--------|-------|------|
+| 일반 냉장고 | **0.946** | 0.946 | 321,948 | always_on 고정 효과 |
+| 전기밥솥 | **0.814** | 0.790 | 259,683 | |
+| 전기장판/담요 | 0.527 | 0.529 | 129,215 | |
+| 공기청정기 | 0.358 | 0.358 | 78,152 | |
+| TV | 0.329 | 0.451 | 70,609 | |
+| 김치냉장고 | 0.489 | 0.496 | 116,011 | |
+| 에어컨 | 0.180 | 0.296 | 35,445 | |
+| 선풍기 | 0.087 | 0.082 | 16,236 | |
+| 식기세척기/건조기 | null | null | 0 ⚠️ | house_067 미보유 |
 
 ---
 
-## EXP3 — 2023-10-06 ~ 2023-10-12 (EXP2 이어받기)
-
-### seq2point
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP2 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP3/seq2point
-
----
-
-### bert4nilm
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP2 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP3/bert4nilm
-
----
-
-### cnn_tda
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP2 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP3/cnn_tda
-
----
-
-## EXP4 — 2023-10-13 ~ 2023-10-19 (EXP3 이어받기)
-
-### seq2point
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP3 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP4/seq2point
-
----
-
-### bert4nilm
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP3 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP4/bert4nilm
-
----
-
-### cnn_tda
-
-**날짜**: &nbsp;&nbsp;&nbsp; **종료 epoch**: &nbsp;&nbsp;&nbsp; **best_epoch**:
-
-| best_epoch | val_MAE | MAE (W) | RMSE (W) | SAE | R² | EXP3 대비 MAE 개선 |
-|-----------|---------|---------|----------|-----|----|--------------------|
-| | | | | | | |
-
-**메모**: - &nbsp;&nbsp;&nbsp; → 22종 개별: [appliance_breakdown.md](appliance_breakdown.md) EXP4/cnn_tda
-
----
-
-## 포화점 판단
-
-| 구간 | seq2point 개선 | bert4nilm 개선 | cnn_tda 개선 | 평균 개선 | 판정 |
-|------|---------------|----------------|--------------|----------|------|
-| EXP1→EXP2 | | | | | |
-| EXP2→EXP3 | | | | | |
-| EXP3→EXP4 | | | | | |
-
-> 평균 개선율 < 5% 이면 포화로 판단, 학습 중단.
-
----
-
-## 최종 선정 모델
+## 최종 선정 모델 (Run 2)
 
 | 항목 | 값 |
 |------|-----|
-| EXP | |
-| 모델 | |
-| best_epoch / 종료 epoch | |
-| MAE (W) | |
-| RMSE (W) | |
-| SAE | |
-| R² | |
-| 베이스라인(미학습) 대비 | |
+| 모델 | cnn_tda |
+| 체크포인트 | EXP4 (test 일반화 기준) |
+| Test MAE | 49.13 W |
+| Test RMSE | 124.48 W |
+| Test SAE | 2.716 |
+| Test F1 | 0.613 |
+| Test F1_cls | 0.640 |
+
+---
+
+## 다음 실험 후보
+
+| 방향 | 내용 | 예상 효과 |
+|------|------|---------|
+| EXP1 regression 재수렴 | scratch 대신 week=1 에폭 수 증가 또는 lr 감소 | MAE 이상값 해소 → 누적 효과 개선 |
+| CNN 커널 크기 조정 | window=1024에 맞게 Conv1d kernel 확대 | receptive field 개선 |
+| n_subsample 조정 | TDA 64→32 (속도 개선) 또는 128 (정확도) | 속도↑ or F1↑ |
