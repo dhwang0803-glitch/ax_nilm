@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 from src.agent.graph import run_graph
 
 HOUSEHOLD_IDS = [
-    "H011","H015","H016","H017","H039","H049","H054","H063","H067 "
+    "H011","H015","H016","H017","H039","H049","H054","H063","H067"
 ]
 
 PROMPT = "이상 탐지 이벤트를 진단하고 절약 추천을 JSON으로 생성해줘"

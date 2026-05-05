@@ -1,9 +1,12 @@
 import datetime
+import logging
 import os
 import time
 from collections import defaultdict
 
 from fastapi import APIRouter
+
+logger = logging.getLogger(__name__)
 
 from src.agent.data_tools import get_anomaly_events, get_anomaly_log
 from src.agent.graph import InsightsLLMOutput, run_graph, run_insights
@@ -44,7 +47,8 @@ def get_or_run_insights(hh: str) -> InsightsLLMOutput:
         )
         try:
             cached = InsightsLLMOutput(**result["answer"])
-        except Exception:
+        except Exception as e:
+            logger.warning("[InsightsLLMOutput 파싱 실패] hh=%s answer=%s error=%s", hh, result["answer"], e)
             cached = run_insights(hh)
         _set_cache(hh, cached)
     return cached
