@@ -273,13 +273,18 @@ class GCSNILMDataset(Dataset):
             )
 
             if _hcache and _hcache.exists():
-                _d = np.load(str(_hcache))
-                agg_power    = _d["agg"]
-                target_power = _d["target"]
-                on_off_mask  = _d["on_off"]
-                validity     = _d["validity"]
-                print(f"[GCSNILMDataset] 캐시 로드: {_hcache.name}")
-            else:
+                try:
+                    _d = np.load(str(_hcache))
+                    agg_power    = _d["agg"]
+                    target_power = _d["target"]
+                    on_off_mask  = _d["on_off"]
+                    validity     = _d["validity"]
+                    print(f"[GCSNILMDataset] 캐시 로드: {_hcache.name}")
+                except Exception as e:
+                    print(f"[GCSNILMDataset] 캐시 손상 → 삭제 후 재빌드: {_hcache.name} ({e})")
+                    _hcache.unlink()
+                    _hcache = None  # else 블록으로 넘어가도록
+            if not (_hcache and _hcache.exists()):
                 channels = list_channels_gcs(gcs_fs, house_id, bucket_prefix)
                 if "ch01" not in channels:
                     print(f"[GCSNILMDataset] {house_id}: ch01 없음 — 스킵")
