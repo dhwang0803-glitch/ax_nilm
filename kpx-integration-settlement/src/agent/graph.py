@@ -92,18 +92,32 @@ _AGENT_SYSTEM = """\
 반드시 아래 JSON 형식으로만 응답하세요 (이상 이벤트가 없어도 동일한 형식 유지):
 {
   "anomaly_diagnoses": [
-    {"event_id": "...", "diagnosis": "지난주 평균 0.12 → 0.22 kW. 도어 가스켓 점검 권장.", "action": "가스켓 점검"}
+    {"event_id": "...", "diagnosis": "지난주 평균 0.12 → 0.22 kW. 냉장고 도어 가스켓 손상 의심.", "action": "가스켓 점검 후 교체 검토"}
   ],
   "recommendations": [
-    {"title": "저녁 19-21시 건조기 미사용", "savings_kwh": 2.1, "savings_krw": 210},
-    {"title": "에어컨 설정 26 → 27°C", "savings_kwh": 1.4, "savings_krw": 140}
+    {"title": "저녁 19-21시 건조기 미사용", "savings_kwh": 2.1, "savings_krw": 252},
+    {"title": "에어컨 설정 26 → 27°C", "savings_kwh": 1.4, "savings_krw": 168}
   ]
 }
 
 이상 이벤트가 없으면 anomaly_diagnoses는 빈 배열([])로, recommendations는 소비 패턴 기반으로 3~5개 작성.
 diagnosis 작성 규칙: "지난주 평균 X → Y kW" 또는 "사용시간 X% 증가" 형식으로 수치 변화를 화살표(→)나 % 로 명시
+action 작성 규칙:
+- 피크(순간 급상승) 이상: 절전 모드 설정, 취침/자동 꺼짐 타이머 설정, 대기전력 차단 플러그 확인 등 설정·환경 변경 중심
+- 과소비(지속 증가) 이상: 부품 점검·청소·필터 교체 등 기기 상태 확인 중심
+- action은 사용 자체를 줄이거나 기기를 끄라는 지시 금지 — 설정 변경·점검으로만 작성
 title 작성 규칙: 시간대("저녁 19-21시"), 수치 변화("26 → 27°C"), 기기명을 조합한 구체적 행동
-규칙: recommendations 3~5개 / savings_krw = round(savings_kwh × 100) / 가전 교체·구매 금지 / 의료·안전 권고 금지
+규칙: recommendations 3~5개 / 가전 교체·구매 금지 / 의료·안전 권고 금지
+savings_krw 계산 (에너지캐시백 단가 구조):
+  반드시 get_cashback_history를 먼저 호출해 가구의 절감률(savings_rate)을 확인하고 아래 단가표로 savings_krw = round(savings_kwh × 단가)를 계산한다.
+  단가표 (KEPCO 에너지캐시백):
+    절감률 3% 미만        → 0원/kWh (미지급, savings_krw = 0)
+    3% 이상 ~ 5% 미만   → 30원/kWh
+    5% 이상 ~ 10% 미만  → 50원/kWh
+    10% 이상 ~ 20% 미만 → 70원/kWh
+    20% 이상 (30% 캡)   → 100원/kWh
+  단가는 가구 전체 절감률로 결정하며 모든 추천 항목에 동일 단가를 적용한다.
+  get_cashback_history 결과가 없으면 50원/kWh(5% 구간) 기본값 사용.
 - 계절·기온을 고려해 기온이 낮으면 난방 관련 가전(전기장판·전기히터 등), 높으면 냉방 관련 가전(에어컨·선풍기 등) 사용 중단 권고 금지
 - recommendations는 get_hourly_appliance_breakdown 데이터에서 kWh 소비가 큰 기기·시간대 순으로 선택, 오전/오후/저녁/야간을 고르게 커버
 - 각 recommendations 항목은 서로 다른 시간대여야 함 (동일 시간대 2개 이상 금지)
