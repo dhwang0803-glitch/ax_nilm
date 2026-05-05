@@ -201,7 +201,78 @@ get_similar_households(household_id: str, k: int = 5) -> dict
 """
 ```
 
-### 2.5 도구 설계 원칙
+### 2.5 이상 탐지 (appliance_status_intervals 기반)
+
+```python
+get_anomaly_events(household_id: str, status: str = "active") -> dict
+"""
+실시간 이상 탐지 이벤트. /insights AI 진단 화면 컨텍스트 제공.
+status: 'active' | 'all'
+
+DB 테이블:
+  appliance_status_intervals (household_id, channel_num, status_code,
+                               confidence, model_version, start_ts, end_ts)
+  appliance_status_codes     (status_code PK, label_ko)
+  → confidence >= 0.85: severity=warning, < 0.85: severity=info
+  → end_ts IS NULL: active, else resolved
+
+목업 시드: scripts/seed_anomaly.sql (model_version='nilm-v2.1-mock')
+  실 NILM 엔진 데이터 생성 후 목업 행 삭제 예정.
+
+반환:
+  {
+    "summary": "이상 이벤트 2건 (경고 1건). 주요: 에어컨 — 비정상 소비 패턴",
+    "count": 2,
+    "raw": [
+      {
+        "event_id": "ASI-H067-42",
+        "appliance": "에어컨",
+        "severity": "warning",
+        "type": "비정상 소비 패턴",
+        "detected_at": "2026-05-01T10:00:00+09:00",
+        "description": "NILM 모델 감지 (신뢰도 0.88)",
+        "confidence": 0.88,
+        "model_version": "nilm-v2.1-mock",
+        "status": "active"
+      }, ...
+    ]
+  }
+"""
+
+get_anomaly_log(
+    household_id: str,
+    date_range: list[str] | None = None,
+    severity: str = "all",
+    appliance: str | None = None,
+) -> dict
+"""
+이상 탐지 이력 로그 — /settings/anomaly-log 화면용.
+date_range: ["YYYY-MM-DD", "YYYY-MM-DD"] 기간 필터
+severity: 'all' | 'info' | 'warning'
+appliance: 가전명 부분 일치 필터
+
+반환:
+  {
+    "summary": "이상 탐지 로그 5건 (해결됨 3건, 활성 2건)",
+    "total": 5,
+    "raw": [
+      {
+        "event_id": "ASI-H067-42",
+        "appliance": "에어컨",
+        "severity": "warning",
+        "type": "비정상 소비 패턴",
+        "detected_at": "2026-05-01T10:00:00+09:00",
+        "resolved_at": null,
+        "confidence": 0.88,
+        "model_version": "nilm-v2.1-mock",
+        "status": "active"
+      }, ...
+    ]
+  }
+"""
+```
+
+### 2.6 도구 설계 원칙
 
 | 원칙 | 이유 |
 |------|------|

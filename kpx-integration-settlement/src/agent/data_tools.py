@@ -638,11 +638,12 @@ def _db_hourly_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') AS d
+            SELECT DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') AS d,
+                   ABS(DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') - %s::date) AS diff
             FROM power_1hour WHERE household_id = %s
-            ORDER BY ABS(DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') - %s::date) LIMIT 1
+            ORDER BY diff LIMIT 1
             """,
-            (household_id, date),
+            (date, household_id),
         )
         row = cur.fetchone()
     if not row:
