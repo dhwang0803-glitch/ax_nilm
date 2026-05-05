@@ -36,6 +36,11 @@ experiments:
     week: 4          # 22~28일차
     resume_from: "EXP3"
 
+  # Run 4 — 전체 데이터 단일 학습 (주차 누적 없이 scratch)
+  EXP_ALL:
+    week: null       # null = 전체 기간 (date_range도 null이면 house 전체)
+    resume_from: null
+
 # Val/Test 평가는 학습 기간과 무관하게 전체 데이터 사용 (different houses → no leakage)
 eval:
   date_range: null   # null = 전체 기간
