@@ -174,7 +174,19 @@ def run_graph(
     ai_turns   = sum(1 for m in result["messages"] if isinstance(m, AIMessage))
     validation = validate_answer(answer, tool_results)
 
-    tracer.log_final_answer(answer, {})
+    token_usage: dict[str, int] = {}
+    for msg in result["messages"]:
+        if not isinstance(msg, AIMessage):
+            continue
+        for src in (
+            getattr(msg, "usage_metadata", None) or {},
+            (getattr(msg, "response_metadata", None) or {}).get("token_usage", {}),
+        ):
+            for k, v in src.items():
+                if isinstance(v, int):
+                    token_usage[k] = token_usage.get(k, 0) + v
+
+    tracer.log_final_answer(answer, token_usage)
     trace_path = tracer.save()
 
     return {
