@@ -24,6 +24,18 @@ ax_nilm/
 │   ├── tests/                 — pytest
 │   ├── docs/                  — 스키마 설계 근거 · 데이터셋 명세
 │   └── agents/                — 에이전트 역할 문서 사본
+├── nilm-engine/               — NILM 분해 엔진 브랜치 작업 폴더 (REQ-001)
+│   ├── src/
+│   │   ├── acquisition/       — 30Hz 데이터 수집·전처리 (dataset.py, gcs_loader.py)
+│   │   ├── features/          — 웨이블릿 + TDA 특징 추출
+│   │   ├── models/            — CNN·TDA 인코더 (PyTorch nn.Module)
+│   │   ├── classifier/        — 22종 레이블 정의 (label_map.py — 단일 진실 공급원)
+│   │   ├── disaggregator.py   — 분해 파이프라인 public API
+│   │   └── postprocessor.py   — 예측 후처리 (min_active spike 제거·gap 메우기·always_on 고정)
+│   ├── scripts/               — 학습·추론 실행 스크립트 및 Colab 노트북
+│   ├── config/                — model.yaml · dataset.yaml 하이퍼파라미터
+│   ├── tests/                 — pytest
+│   └── docs/                  — 실험 결과·라벨링 기준·개선 계획 (gitignore 대상, 로컬 전용)
 └── {다른 모듈 브랜치}/          — API_Server / Execution_Engine / Frontend 등
                                  (post-checkout 훅이 각 브랜치 진입 시 자동 생성)
 ```
@@ -35,6 +47,7 @@ ax_nilm/
 | `main` | (통합 브랜치, 전체 루트) | — |
 | `docs` | `docs/context/` 만 편집 | 활성 |
 | `Database` | `Database/` | 활성 |
+| `nilm-engine` | `nilm-engine/` | 활성 |
 | `dr-savings-prediction` | `dr-savings-prediction/` | 활성 |
 | `API_Server` | `API_Server/` | 미착수 |
 | `Execution_Engine` | `Execution_Engine/` | 미착수 |
