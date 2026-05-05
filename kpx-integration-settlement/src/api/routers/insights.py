@@ -9,7 +9,7 @@ from fastapi import APIRouter
 logger = logging.getLogger(__name__)
 
 from src.agent.data_tools import get_anomaly_events, get_anomaly_log
-from src.agent.graph import InsightsLLMOutput, run_graph, run_insights
+from src.agent.graph import InsightsLLMOutput, cashback_unit_rate, run_graph, run_insights
 
 router = APIRouter()
 
@@ -50,6 +50,9 @@ def get_or_run_insights(hh: str) -> InsightsLLMOutput:
         except Exception as e:
             logger.warning("[InsightsLLMOutput 파싱 실패] hh=%s answer=%s error=%s", hh, result["answer"], e)
             cached = run_insights(hh)
+        unit_rate = cashback_unit_rate(hh)
+        for rec in cached.recommendations:
+            rec.savings_krw = round(rec.savings_kwh * unit_rate)
         _set_cache(hh, cached)
     return cached
 
