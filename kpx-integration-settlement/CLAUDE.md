@@ -48,7 +48,8 @@ DEFAULT_HH=HH001 DB_PASSWORD=<secret> uvicorn src.api.main:app --reload --port 8
 - `appliance_status_intervals` 기반: get_anomaly_events / get_anomaly_log
 - `household_daily_env` 기반: get_weather (KMA 외부 API 대신 DB 활용)
 - `_calc_cashback_potential`: 내부 mock 직접 참조 → get_cashback_history / get_tariff_info 위임
-- 날씨 예보(get_forecast), `appliance_status_codes` anomaly 전용 테이블 미생성분은 mock 유지
+- 날씨 예보(get_forecast)는 `household_daily_env` CURRENT_DATE 이후 조회로 연결 (mock fallback 유지)
+- `appliance_status_codes` 및 `appliance_status_intervals` 시드 데이터: `scripts/seed_anomaly.sql` 실행 필요 (NILM 엔진 실데이터 투입 전 목업)
 
 ## 파일 생성 금지 위치
 

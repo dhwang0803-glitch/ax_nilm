@@ -638,11 +638,12 @@ def _db_hourly_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT DISTINCT DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') AS d
+            SELECT DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') AS d,
+                   ABS(DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') - %s::date) AS diff
             FROM power_1hour WHERE household_id = %s
-            ORDER BY ABS(DATE(hour_bucket AT TIME ZONE 'Asia/Seoul') - %s::date) LIMIT 1
+            ORDER BY diff LIMIT 1
             """,
-            (household_id, date),
+            (date, household_id),
         )
         row = cur.fetchone()
     if not row:
@@ -737,6 +738,36 @@ def _db_weather(conn, date_range: list[str], location: str) -> dict[str, Any]:
     ]
     avg_t = sum(r["tavg"] for r in records) / len(records)
     summary = f"{start}~{end} {location} 평균 {avg_t:.1f}°C"
+    return {"summary": summary, "raw": records}
+
+
+def _db_forecast(conn, days_ahead: int, location: str) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT observed_date,
+                   ROUND(AVG(temperature_c)::numeric, 1) AS tavg,
+                   ROUND(AVG(wind_speed_ms)::numeric, 1) AS wind,
+                   ROUND(AVG(humidity_pct)::numeric, 0)  AS rh
+            FROM household_daily_env
+            WHERE observed_date >= CURRENT_DATE
+            GROUP BY observed_date ORDER BY observed_date
+            LIMIT %s
+            """,
+            (days_ahead,),
+        )
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"error": f"예보 데이터 없음: {location}", "code": "E_NO_DATA"}
+
+    records = [
+        {"date": str(r[0]), "tavg": float(r[1] or 0), "wind": float(r[2] or 0), "rh": float(r[3] or 0)}
+        for r in rows
+    ]
+    avg_t   = sum(r["tavg"] for r in records) / len(records)
+    summary = f"{records[0]['date']}~{records[-1]['date']} {location} 예상 평균 {avg_t:.1f}°C"
     return {"summary": summary, "raw": records}
 
 
@@ -1151,7 +1182,13 @@ def get_weather(date_range: list[str], location: str = "서울") -> dict[str, An
 
 def get_forecast(days_ahead: int = 7, location: str = "서울") -> dict[str, Any]:
     """향후 N일간 날씨 예보(기온, 강수) 조회."""
-    loc     = location if location in _KNOWN_LOCATIONS else "서울"
+    loc  = location if location in _KNOWN_LOCATIONS else "서울"
+    conn = _get_db_conn()
+    if conn:
+        result = _db_forecast(conn, days_ahead, loc)
+        if "error" not in result:
+            return result
+    # mock fallback
     records = _MOCK_FORECAST.get(loc, [])[:days_ahead]
     if not records:
         return {"error": f"예보 데이터 없음: {loc}", "code": "E_NO_DATA"}
