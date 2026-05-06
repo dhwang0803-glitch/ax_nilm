@@ -95,8 +95,8 @@ class _NILMDatasetWithTDA(Dataset):
         return len(self.base)
 
     def __getitem__(self, idx: int):
-        agg, target, on_off, validity = self.base[idx]
-        return agg, self._tda[idx], target, on_off, validity
+        agg, target, on_off, validity, house_mask = self.base[idx]
+        return agg, self._tda[idx], house_mask, target, on_off, validity
 
 
 # ── 모델 팩토리 ───────────────────────────────────────────────────────────────
@@ -196,10 +196,11 @@ def evaluate(
 
     for batch in loader:
         if model_name == "cnn_tda":
-            agg, tda, target, on_off, validity = batch
+            agg, tda, house_mask, target, on_off, validity = batch
             agg = agg.unsqueeze(1).to(device)
             tda = tda.to(device)
-            result = model(agg, tda)
+            house_mask = house_mask.to(device)
+            result = model(agg, tda, house_mask)
             pred = result[0]
             fusion_logit = result[3] if len(result) == 4 else None
         elif model_name == "seq2point":
@@ -367,10 +368,11 @@ def train_one_epoch(
 
         with torch.autocast(device_type=device.type, enabled=use_amp):
             if model_name == "cnn_tda":
-                agg, tda, target, on_off, validity = batch
+                agg, tda, house_mask, target, on_off, validity = batch
                 agg = agg.unsqueeze(1).to(device)
                 tda = tda.to(device)
-                result = model(agg, tda)
+                house_mask = house_mask.to(device)
+                result = model(agg, tda, house_mask)
                 pred, _conf, cnn_logit, fusion_logit = result
             elif model_name == "seq2point":
                 agg, target, on_off, validity = batch

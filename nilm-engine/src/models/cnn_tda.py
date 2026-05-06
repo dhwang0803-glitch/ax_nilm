@@ -47,6 +47,7 @@ class CNNTDAHybrid(nn.Module):
 
     _CNN_EMBED = 512
     _TDA_EMBED = 128
+    _MASK_EMBED = 32
 
     def __init__(self, window_size: int = 1024, dropout: float = 0.1,
                  confidence_threshold: float = 0.5):
@@ -89,9 +90,16 @@ class CNNTDAHybrid(nn.Module):
 
         self.cross_attn = _CrossAttention(self._CNN_EMBED, self._TDA_EMBED)
 
+        # 가구 등록 가전 마스크 (22차원) → 임베딩
+        self.mask_proj = nn.Sequential(
+            nn.Linear(N_APPLIANCES, self._MASK_EMBED),
+            nn.ReLU(),
+        )
+        _feat_in = self._CNN_EMBED + self._MASK_EMBED  # 512 + 32 = 544
+
         # Fast path: CNN features → 공유 feature → regression + classification
         self.cnn_feat = nn.Sequential(
-            nn.Linear(self._CNN_EMBED, 256),
+            nn.Linear(_feat_in, 256),
             nn.ReLU(),
             nn.Dropout(dropout),
         )
@@ -100,7 +108,7 @@ class CNNTDAHybrid(nn.Module):
 
         # Slow path: fused features → 공유 feature → regression + classification
         self.fusion_feat = nn.Sequential(
-            nn.Linear(self._CNN_EMBED, 512),
+            nn.Linear(_feat_in, 512),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(512, 256),
@@ -111,30 +119,52 @@ class CNNTDAHybrid(nn.Module):
         self.fusion_cls = nn.Linear(256, N_APPLIANCES)  # 분류 로짓 (BCE용)
 
     def forward(
-        self, agg: torch.Tensor, tda: torch.Tensor | None = None
+        self,
+        agg: torch.Tensor,
+        tda: torch.Tensor | None = None,
+        house_mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, ...]:
         """
         반환 (tda 제공 시): (pred, confidence, cnn_logit, fusion_logit)
         반환 (tda=None):    (pred, confidence)   — fast inference path
+
+        house_mask: (batch, N_APPLIANCES) float32 — 등록 가전=1, 미등록=0.
+                    None이면 전부 1로 처리 (기존 동작 유지).
         """
         cnn_embed  = self.cnn(agg)                      # (batch, 512)
         confidence = self.gate(cnn_embed)               # (batch, 1)
 
-        cnn_f    = self.cnn_feat(cnn_embed)             # (batch, 256)
-        cnn_pred = self.cnn_reg(cnn_f)                  # (batch, N_APPLIANCES)
+        # 가구 마스크 임베딩 — 없으면 전부 1(등록) 처리
+        if house_mask is not None:
+            mask_f = self.mask_proj(house_mask)         # (batch, 32)
+        else:
+            mask_f = self.mask_proj(
+                torch.ones(cnn_embed.shape[0], N_APPLIANCES, device=cnn_embed.device)
+            )
+
+        cnn_in   = torch.cat([cnn_embed, mask_f], dim=-1)   # (batch, 544)
+        cnn_f    = self.cnn_feat(cnn_in)                     # (batch, 256)
+        cnn_pred = self.cnn_reg(cnn_f)                       # (batch, N_APPLIANCES)
 
         if tda is None:
             return F.relu(cnn_pred), confidence
 
         tda_feat    = self.tda_mlp(tda)                                  # (batch, 128)
         fused       = self.cross_attn(cnn_embed, tda_feat)               # (batch, 512)
-        fusion_f    = self.fusion_feat(fused)                            # (batch, 256)
+        fusion_in   = torch.cat([fused, mask_f], dim=-1)                 # (batch, 544)
+        fusion_f    = self.fusion_feat(fusion_in)                        # (batch, 256)
         fusion_pred = self.fusion_reg(fusion_f)                          # (batch, N_APPLIANCES)
 
-        pred = F.relu(confidence * cnn_pred + (1 - confidence) * fusion_pred)  # non-negative power
+        pred = F.relu(confidence * cnn_pred + (1 - confidence) * fusion_pred)
 
         cnn_logit    = self.cnn_cls(cnn_f)                               # (batch, N_APPLIANCES)
         fusion_logit = self.fusion_cls(fusion_f)                         # (batch, N_APPLIANCES)
+
+        # 출력 게이팅: 미등록 가전 로짓 억제 (학습 + 추론 모두)
+        if house_mask is not None:
+            logit_gate   = (1.0 - house_mask) * -1e6
+            cnn_logit    = cnn_logit    + logit_gate
+            fusion_logit = fusion_logit + logit_gate
 
         return pred, confidence, cnn_logit, fusion_logit
 
