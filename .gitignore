@@ -225,6 +225,9 @@ nilm-engine/datasets/
 # nilm-engine 내부 작업 문서 (로컬 전용)
 nilm-engine/docs/
 
+# nilm-engine 로컬 실험 (GitHub 미업로드)
+nilm-engine/experiments/
+
 # Secrets & credentials
 *.pem
 *.key
