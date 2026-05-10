@@ -232,3 +232,6 @@ nilm-engine/experiments/
 *.pem
 *.key
 credentials.json
+
+# Team-internal demo guide (Google Drive 공유용 — git 추적 제외)
+DEMO_GUIDE.md
