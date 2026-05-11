@@ -159,6 +159,25 @@ def load_channel_data_gcs(
 
 # ── 라벨 로드 ─────────────────────────────────────────────────────────────────
 
+def build_house_mask_dict(
+    gcs_fs: "gcsfs_type.GCSFileSystem",
+    label_path: str = _DEFAULT_LABEL_PATH,
+) -> dict[str, "np.ndarray"]:
+    """label parquet에서 가구별 22차원 등록 가전 binary mask dict 생성."""
+    import numpy as np
+    try:
+        from .classifier.label_map import build_house_mask
+    except ImportError:
+        from classifier.label_map import build_house_mask
+
+    df = _load_labels_df(gcs_fs, label_path)
+    result: dict[str, np.ndarray] = {}
+    for house_id in df["household_id"].unique():
+        names = df[df["household_id"] == house_id]["appliance_name"].dropna().unique().tolist()
+        result[house_id] = build_house_mask(names)
+    return result
+
+
 def load_all_labels_gcs(
     gcs_fs: "gcsfs_type.GCSFileSystem",
     house_id: str,
@@ -215,6 +234,7 @@ class GCSNILMDataset(Dataset):
         resample_hz: int = 30,
         appliance_group: str | None = None,
         denoise: bool = True,
+        house_mask_dict: "dict[str, np.ndarray] | None" = None,
     ):
         """
         event_context   : 전환점 기준 ±N 윈도우. None이면 전수 슬라이딩.
@@ -259,6 +279,7 @@ class GCSNILMDataset(Dataset):
 
         self._segments: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         self._window_index: list[tuple[int, int]] = []
+        self._seg_masks: list[np.ndarray] = []   # per-segment house appliance mask (22,)
         _all_agg: list[np.ndarray] = []
 
         # ── 1단계: house별 캐시 로드 또는 GCS 빌드 ────────────────────────────
@@ -273,13 +294,18 @@ class GCSNILMDataset(Dataset):
             )
 
             if _hcache and _hcache.exists():
-                _d = np.load(str(_hcache))
-                agg_power    = _d["agg"]
-                target_power = _d["target"]
-                on_off_mask  = _d["on_off"]
-                validity     = _d["validity"]
-                print(f"[GCSNILMDataset] 캐시 로드: {_hcache.name}")
-            else:
+                try:
+                    _d = np.load(str(_hcache))
+                    agg_power    = _d["agg"]
+                    target_power = _d["target"]
+                    on_off_mask  = _d["on_off"]
+                    validity     = _d["validity"]
+                    print(f"[GCSNILMDataset] 캐시 로드: {_hcache.name}")
+                except Exception as e:
+                    print(f"[GCSNILMDataset] 캐시 손상 → 삭제 후 재빌드: {_hcache.name} ({e})")
+                    _hcache.unlink()
+                    _hcache = None  # else 블록으로 넘어가도록
+            if not (_hcache and _hcache.exists()):
                 channels = list_channels_gcs(gcs_fs, house_id, bucket_prefix)
                 if "ch01" not in channels:
                     print(f"[GCSNILMDataset] {house_id}: ch01 없음 — 스킵")
@@ -353,6 +379,10 @@ class GCSNILMDataset(Dataset):
             if fit_scaler:
                 _all_agg.append(agg_power)
             self._segments.append((agg_power, target_power, on_off_mask, validity))
+            _hmask = (house_mask_dict.get(house_id) if house_mask_dict else None)
+            if _hmask is None:
+                _hmask = np.ones(N_APPLIANCES, dtype=np.float32)
+            self._seg_masks.append(_hmask)
 
         # ── 2단계: scaler fit & 적용 ──────────────────────────────────────────
         if fit_scaler and _all_agg:
@@ -422,4 +452,5 @@ class GCSNILMDataset(Dataset):
             torch.from_numpy(target[:, start:end].copy()),
             torch.from_numpy(on_off[:, start:end].copy()),
             torch.from_numpy(validity.copy()),
+            torch.from_numpy(self._seg_masks[seg_idx].copy()),
         )

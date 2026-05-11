@@ -1,8 +1,31 @@
 # Database 추가 작업 대기 목록 (임시)
 
-> 작성일: 2026-04-26 (최초) · 갱신: 2026-04-26 (Integration tests 23개 통과)
+> 작성일: 2026-04-26 (최초) · 갱신: 2026-05-10 (시연용 timestamp shift +911일 적용)
 > 작성 맥락: main 머지 후(39 커밋 동기화) 각 feature 브랜치의 DB 의존을 수집한 결과.
 > 성격: **임시 작업 노트.** 모든 항목 클로즈 후에는 본 파일을 폐기하고 `migrations/`·`schema_design.md`로 흡수한다.
+
+---
+
+## 2026-05-10 적용분: 시연용 timestamp shift +911 일
+
+**왜**: 실측 `power_1min` 은 2023-09-27 ~ 2023-11-15 (50 일) 만 존재. 공모전 시연 (2026-05-15) 의 "현재" 와 정합되도록 모든 시계열을 +911 일 이동 (실측 끝 → 시연 - 1 일 정렬).
+
+**무엇**:
+- `migrations/20260510_11_demo_timestamp_shift_911d.sql` — `power_1min` (7,499,520 행) INSERT shifted + drop_chunks 21 개, `household_daily_env` (2,449 행) UPDATE
+- `migrations/20260510_12_power_1hour_cagg_refresh.sql` — `power_1hour` cagg 전체 재 refresh (124,992 행)
+
+**적용 결과**:
+- `power_1min`: 2026-03-26 15:00 ~ 2026-05-14 14:59 UTC, 행수 동일
+- `power_1hour`: 2026-03-26 15:00 ~ 2026-05-14 14:00 UTC, 124,992 행 동일
+- `household_daily_env`: 2026-03-21 ~ 2026-06-16 (메타용 — 시연 화면에서 WHERE date <= today 필터)
+
+**주의 (다운스트림)**:
+- `nilm-engine` / `kpx-integration-settlement` / `dr-savings-prediction` 가 power_1min 을 직접 조회한다면 baseline · CBL · cluster 분석이 갑자기 2026 데이터를 만나게 됨. 합의된 shift 라 정상이지만, 캐시·고정 쿼리 윈도우 (`WHERE bucket_ts >= '2023-...'`) 가 박혀 있으면 결과 0 으로 돌아옴 → 점검 필요
+- retention policy 는 여전히 적용 금지. shift 후에도 시연 직전 7 일 자동 drop 위험 동일
+
+**남은 작업** (작업 4-5, 별도 세션):
+- 더미 historical 24개월 적재 (`scripts/load_dummy_historical.py`) — 캐시백 baseline 입력
+- agent 도구 검증 (kpx-integration-settlement 가 baseline / 절감률 SQL 호출 시 결과 sanity)
 
 ---
 

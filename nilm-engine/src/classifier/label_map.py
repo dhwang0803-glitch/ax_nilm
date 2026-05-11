@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import TypedDict, Literal
 
+import numpy as np
+
 N_APPLIANCES = 22
 
 APPLIANCE_LABELS: list[str] = [
@@ -27,6 +29,31 @@ APPLIANCE_LABELS: list[str] = [
     "김치냉장고",             # 20 type4
     "무선공유기/셋톱박스",    # 21 type4
 ]
+
+_LABEL_INDEX: dict[str, int] = {name: i for i, name in enumerate(APPLIANCE_LABELS)}
+
+# label parquet appliance_name → APPLIANCE_LABELS 표준 이름 매핑
+_LABEL_NORMALIZE: dict[str, str] = {
+    "진공 청소기(유선)": "진공청소기(유선)",
+    "전기장판, 담요":    "전기장판/담요",
+    "김치 냉장고":       "김치냉장고",
+    "식기세척기":        "식기세척기/건조기",
+}
+
+
+def build_house_mask(appliance_names: list[str]) -> np.ndarray:
+    """가구 등록 가전 목록 → (N_APPLIANCES,) float32 binary mask.
+
+    label parquet의 appliance_name 목록을 받아 APPLIANCE_LABELS 인덱스 기준 1/0 반환.
+    등록되지 않은 가전은 0 → 모델이 해당 출력을 억제하도록 학습.
+    """
+    mask = np.zeros(N_APPLIANCES, dtype=np.float32)
+    for name in appliance_names:
+        normalized = _LABEL_NORMALIZE.get(name, name)
+        if normalized in _LABEL_INDEX:
+            mask[_LABEL_INDEX[normalized]] = 1.0
+    return mask
+
 
 APPLIANCE_TYPES: dict[str, str] = {
     "TV": "type1", "전기포트": "type1", "선풍기": "type1",

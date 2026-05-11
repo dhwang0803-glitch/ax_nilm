@@ -34,6 +34,8 @@ from features.tda import compute_tda_features
 from models.seq2point import Seq2Point
 from models.bert4nilm import BERT4NILM
 from models.cnn_tda import CNNTDAHybrid
+from models.cnn_multiscale import CNNMultiScaleHybrid
+from models.per_appliance_head import PerApplianceNILM
 
 # ── TDA 래퍼 Dataset ──────────────────────────────────────────────────────────
 
@@ -95,8 +97,8 @@ class _NILMDatasetWithTDA(Dataset):
         return len(self.base)
 
     def __getitem__(self, idx: int):
-        agg, target, on_off, validity = self.base[idx]
-        return agg, self._tda[idx], target, on_off, validity
+        agg, target, on_off, validity, house_mask = self.base[idx]
+        return agg, self._tda[idx], house_mask, target, on_off, validity
 
 
 # ── 모델 팩토리 ───────────────────────────────────────────────────────────────
@@ -108,6 +110,10 @@ def build_model(model_name: str, window_size: int) -> nn.Module:
         return BERT4NILM(window_size=window_size)
     elif model_name == "cnn_tda":
         return CNNTDAHybrid(window_size=window_size)
+    elif model_name == "cnn_multiscale":
+        return CNNMultiScaleHybrid(window_size=window_size)
+    elif model_name == "per_appliance_head":
+        return PerApplianceNILM(window_size=window_size)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -195,11 +201,12 @@ def evaluate(
     all_fusion_logit = []
 
     for batch in loader:
-        if model_name == "cnn_tda":
-            agg, tda, target, on_off, validity = batch
+        if model_name in ("cnn_tda", "cnn_multiscale"):
+            agg, tda, house_mask, target, on_off, validity = batch
             agg = agg.unsqueeze(1).to(device)
             tda = tda.to(device)
-            result = model(agg, tda)
+            house_mask = house_mask.to(device)
+            result = model(agg, tda, house_mask)
             pred = result[0]
             fusion_logit = result[3] if len(result) == 4 else None
         elif model_name == "seq2point":
@@ -366,11 +373,12 @@ def train_one_epoch(
         optimizer.zero_grad()
 
         with torch.autocast(device_type=device.type, enabled=use_amp):
-            if model_name == "cnn_tda":
-                agg, tda, target, on_off, validity = batch
+            if model_name in ("cnn_tda", "cnn_multiscale"):
+                agg, tda, house_mask, target, on_off, validity = batch
                 agg = agg.unsqueeze(1).to(device)
                 tda = tda.to(device)
-                result = model(agg, tda)
+                house_mask = house_mask.to(device)
+                result = model(agg, tda, house_mask)
                 pred, _conf, cnn_logit, fusion_logit = result
             elif model_name == "seq2point":
                 agg, target, on_off, validity = batch
@@ -655,7 +663,7 @@ def _merge_group_metrics(group_metrics: dict[str, dict]) -> dict:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model",     required=True, choices=["seq2point", "bert4nilm", "cnn_tda"])
+    parser.add_argument("--model",     required=True, choices=["seq2point", "bert4nilm", "cnn_tda", "cnn_multiscale", "per_appliance_head"])
     parser.add_argument("--exp",       required=True, help="예: EXP1, EXP2, ...")
     parser.add_argument("--data-root", required=True, help="AIHub 데이터셋 루트 경로")
     parser.add_argument("--config-dir", default=str(_NILM_ROOT / "config"))
@@ -712,7 +720,7 @@ def main():
             print(f"  └─ scaler 로드: mean={prev_scaler.mean:.2f}W  std={prev_scaler.std:.2f}W")
 
     # ── cnn_tda multi-speed (dataset.yaml groups 설정 존재 시 우선 진입) ────────
-    if args.model == "cnn_tda" and "groups" in dataset_cfg:
+    if args.model in ("cnn_tda", "cnn_multiscale") and "groups" in dataset_cfg:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         _app_index = {name: i for i, name in enumerate(APPLIANCE_LABELS)}
@@ -789,7 +797,7 @@ def main():
                                  scaler=base_train.scaler, cache_dir=cache_dir,
                                  event_context=event_context, steady_stride=steady_stride)
 
-    if args.model == "cnn_tda":
+    if args.model in ("cnn_tda", "cnn_multiscale"):
         train_ds = _NILMDatasetWithTDA(base_train, cache_dir=cache_dir,
                                        event_context=event_context, steady_stride=steady_stride)
         val_ds   = _NILMDatasetWithTDA(base_val,   cache_dir=cache_dir,
@@ -858,7 +866,7 @@ def main():
     # ── pos_weight 계산 (cnn_tda 전용) ──────────────────────────────────────
     pos_weight_max = float(train_cfg["training"].get("pos_weight_max", 20.0))
     pos_weight = None
-    if args.model == "cnn_tda":
+    if args.model in ("cnn_tda", "cnn_multiscale"):
         print("  pos_weight 계산 중...")
         pos_weight = compute_pos_weight(train_loader, device, max_weight=pos_weight_max)
         for name, pw in zip(APPLIANCE_LABELS, pos_weight.cpu().tolist()):
