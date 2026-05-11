@@ -18,7 +18,7 @@ def _make_records(
 ) -> list[DisaggregationResult]:
     records = []
     now = datetime(2026, 5, 1)
-    cutoff = now - timedelta(weeks=1)
+    cutoff = now - timedelta(hours=24)  # detector eval_period = 마지막 24시간
     start = now - timedelta(days=n_days)
     t = start
     while t <= now:

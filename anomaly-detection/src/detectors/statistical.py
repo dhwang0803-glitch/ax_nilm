@@ -180,7 +180,9 @@ class StatisticalAnomalyDetector:
         baseline = group[(group.index >= baseline_start) & (group.index < eval_start)]
         eval_period = group[group.index >= eval_start]
 
-        if baseline.empty or eval_period.empty:
+        min_baseline_days = 7 if self.poc_mode else 21
+        baseline_days = (baseline.index.max() - baseline.index.min()).days if not baseline.empty else 0
+        if baseline.empty or eval_period.empty or baseline_days < min_baseline_days:
             return None, None
         return baseline, eval_period
 
