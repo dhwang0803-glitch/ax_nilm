@@ -181,31 +181,189 @@ kpx-integration-settlement/
 │   └── project_and_work_summary.md
 ├── src/
 │   ├── agent/
-│   │   ├── graph.py          ← LangGraph ReAct 에이전트 + InsightsLLMOutput 스키마
-│   │   ├── data_tools.py     ← 10개 데이터 조회 도구 (실DB + mock fallback)
-│   │   ├── anonymizer.py     ← PII 스크럽 (도구 출력 레벨)
-│   │   ├── validator.py      ← LLM 출력 검증
-│   │   └── trace_logger.py   ← 로컬 트레이스 저장
+│   │   ├── graph.py              ← 단일 ReAct 에이전트 (하위 호환 유지)
+│   │   ├── data_tools.py         ← 10개 데이터 조회 도구 (모든 에이전트 공유)
+│   │   ├── anonymizer.py         ← PII 스크럽 (도구 출력 레벨)
+│   │   ├── validator.py          ← LLM 출력 검증
+│   │   ├── trace_logger.py       ← 로컬 트레이스 저장
+│   │   └── multi_agent/          ← 멀티에이전트 (수퍼바이저 패턴)
+│   │       ├── __init__.py
+│   │       ├── supervisor.py     ← LangGraph 수퍼바이저 그래프 + 상태 스키마
+│   │       ├── nilm_monitor.py   ← Module 2: NILM 모니터링 에이전트
+│   │       ├── cashback_node.py  ← Module 3: 캐시백 계산 노드 (Python 함수)
+│   │       └── report_agent.py   ← Module 5: AI 진단 리포트 에이전트
 │   ├── api/
 │   │   └── routers/
-│   │       ├── dashboard.py  ← GET /api/dashboard/summary
-│   │       ├── usage.py      ← GET /api/usage/analysis
-│   │       ├── auth.py       ← 인증
-│   │       ├── settings.py   ← GET /api/settings/account
-│   │       ├── cashback.py   ← GET /api/cashback/tracker
-│   │       └── insights.py   ← GET /api/insights/summary (에이전트 연동)
+│   │       ├── dashboard.py      ← GET /api/dashboard/summary
+│   │       ├── usage.py          ← GET /api/usage/analysis
+│   │       ├── auth.py           ← 인증
+│   │       ├── settings.py       ← GET /api/settings/account
+│   │       ├── cashback.py       ← GET /api/cashback/tracker
+│   │       └── insights.py       ← GET /api/insights/summary (에이전트 연동)
 │   └── settlement/
-│       ├── cbl.py            ← 기준선 계산 (2개년 동월 평균)
-│       ├── calculator.py     ← 캐시백 산정 (절감률 → 단가 → 금액)
-│       └── appliance.py      ← 가전별 절감 기여 분석
+│       ├── cbl.py                ← 기준선 계산 (2개년 동월 평균)
+│       ├── calculator.py         ← 캐시백 산정 (절감률 → 단가 → 금액)
+│       └── appliance.py          ← 가전별 절감 기여 분석
 ├── scripts/
-│   └── seed_anomaly.sql      ← appliance_status_intervals 목업 시드
+│   └── seed_anomaly.sql          ← appliance_status_intervals 목업 시드
 ├── tests/
-│   └── run_target_households.py ← 9가구 통합 검증 (LangSmith 트레이싱)
+│   └── run_target_households.py  ← 9가구 통합 검증 (LangSmith 트레이싱)
 ├── config/
 │   └── .env.example
 └── CLAUDE.md
 ```
+
+---
+
+---
+
+## 멀티에이전트 아키텍처 (수퍼바이저 패턴)
+
+> Module 4 (지식 검색 RAG)는 문서 소싱 후 별도 추가 예정. 현재는 4개 모듈만 구현.
+
+### 전체 흐름
+
+```
+사용자 요청 (household_id)
+        ↓
+  Supervisor (rule-based, LLM 없음)
+        ↓ 병렬 실행
+┌───────────────────┐   ┌──────────────────────┐
+│ Module 2          │   │ Module 3             │
+│ NILM 모니터링     │   │ 캐시백 계산          │
+│ (ReAct 에이전트)  │   │ (Python 함수 노드)   │
+└────────┬──────────┘   └──────────┬───────────┘
+         │                         │
+         └──────────┬──────────────┘
+                    ↓
+             Module 5
+         AI 진단 리포트 에이전트
+         (구조화 출력 LLM)
+                    ↓
+          InsightsLLMOutput
+    (anomaly_diagnoses + recommendations)
+                    ↓
+          Python 후처리: savings_krw 계산
+```
+
+---
+
+### 모듈별 설계
+
+#### Module 1 — 전력 데이터 조회 (공유 도구층)
+
+에이전트가 아닌 공유 도구 레이어. `data_tools.py`의 10개 함수를 모든 에이전트가 공유한다.
+
+| 도구 | 용도 |
+|------|------|
+| `get_consumption_summary` | 월별 총 소비량 |
+| `get_hourly_appliance_breakdown` | 채널별 시간대별 kWh |
+| `get_consumption_hourly` | 시간대별 총 소비 |
+| `get_consumption_breakdown` | 가전별 소비 비중 |
+| `get_cashback_history` | 월별 캐시백 실적 |
+| `get_tariff_info` | 요금제·누진단계 |
+| `get_anomaly_events` | 활성 이상 이벤트 |
+| `get_anomaly_log` | 이상 탐지 이력 |
+| `get_weather` | 현재 날씨·기온 |
+| `get_forecast` | 7일 예보 |
+
+---
+
+#### Module 2 — NILM 모니터링 에이전트
+
+- **파일**: `src/agent/multi_agent/nilm_monitor.py`
+- **타입**: LangGraph ReAct 에이전트
+- **담당 도구**: `get_anomaly_events`, `get_anomaly_log`, `get_hourly_appliance_breakdown`, `get_consumption_hourly`, `get_consumption_breakdown`
+
+**출력 스키마 `NilmMonitorOutput`**:
+```python
+class TopConsumer(BaseModel):
+    appliance: str        # 가전명
+    channel: int          # 채널 번호
+    kwh: float            # 월간 추정 kWh
+
+class NilmMonitorOutput(BaseModel):
+    anomaly_events: list[dict]   # get_anomaly_events raw 결과
+    top_consumers: list[TopConsumer]  # 소비 상위 3~5개 가전
+    peak_hours: list[int]        # 소비 피크 시간대 (0~23)
+```
+
+**역할**: 이상 이벤트 수집 + 어떤 가전이 얼마나 쓰는지 파악 → Module 5에 구조화된 형태로 전달.
+
+---
+
+#### Module 3 — 캐시백 계산 노드
+
+- **파일**: `src/agent/multi_agent/cashback_node.py`
+- **타입**: Python 함수 노드 (LLM 없음 — settlement/ 함수 직접 호출)
+- **입력**: `household_id`
+- **사용 함수**: `get_cashback_history`, `get_consumption_summary`, `cashback_unit_rate()`
+
+**출력 스키마 `CashbackNodeOutput`**:
+```python
+class CashbackNodeOutput(BaseModel):
+    baseline_kwh: float           # 2개년 동월 평균 기준선
+    actual_kwh: float             # 당월 실측 사용량
+    savings_rate: float           # 절감률 (savings/baseline)
+    cashback_rate_krw_per_kwh: float  # 적용 단가 (30/50/70/100)
+    projected_cashback_krw: int   # 이번 달 예상 캐시백
+    enrolled: bool                # 에너지캐시백 신청 여부
+```
+
+**역할**: 기준선·절감률·단가를 계산해 Module 5가 수치 기반 권고를 생성할 수 있도록 컨텍스트 제공.
+
+---
+
+#### Module 5 — AI 진단 리포트 에이전트
+
+- **파일**: `src/agent/multi_agent/report_agent.py`
+- **타입**: 구조화 출력 LLM (`with_structured_output(InsightsLLMOutput)`)
+- **입력**: `NilmMonitorOutput` + `CashbackNodeOutput` + `get_weather` 결과
+- **담당 도구**: `get_weather`, `get_forecast` (날씨 컨텍스트)
+
+**역할**: Module 2·3에서 받은 구조화 데이터를 바탕으로 이상 진단 + 절감 권고 최종 생성.
+Module 2가 이미 이상 이벤트·가전 소비 패턴을 정리해서 전달하므로 이 에이전트는 도구를 최소한으로 호출하고 LLM 집중.
+
+---
+
+#### Supervisor — 수퍼바이저 노드
+
+- **파일**: `src/agent/multi_agent/supervisor.py`
+- **타입**: LangGraph `StateGraph` (LLM 없음, rule-based 라우팅)
+- **상태 스키마**:
+
+```python
+class MultiAgentState(TypedDict):
+    household_id: str
+    nilm_output: NilmMonitorOutput | None      # Module 2 결과
+    cashback_output: CashbackNodeOutput | None  # Module 3 결과
+    final_output: InsightsLLMOutput | None      # Module 5 결과
+```
+
+**그래프 구조**:
+```
+START
+  └→ nilm_monitor_node  ─→ report_node → END
+  └→ cashback_node      ─↗
+```
+> Module 2·3은 병렬 실행. 둘 다 완료되면 Module 5 실행.
+
+**공개 진입점**:
+```python
+def run_multi_agent(household_id: str) -> InsightsLLMOutput:
+    """수퍼바이저 그래프 실행. insights.py 라우터에서 호출."""
+```
+
+---
+
+### 기존 단일 에이전트(`graph.py`)와의 관계
+
+| 항목 | 단일 에이전트 (`graph.py`) | 멀티에이전트 (`multi_agent/`) |
+|------|--------------------------|-------------------------------|
+| 진입점 | `run_graph()` | `run_multi_agent()` |
+| 구조 | ReAct 10도구 전부 | 역할 분리 후 병렬 실행 |
+| 토큰 | 단일 컨텍스트 누적 | 에이전트별 독립 컨텍스트 |
+| 유지 여부 | 하위 호환용 유지 | 신규 구현 — insights.py에서 점진적 전환 |
 
 ---
 
@@ -218,6 +376,7 @@ kpx-integration-settlement/
 - [x] Aggregator 없음 — KEPCO 직접
 - [x] savings_krw Python 후처리 — LLM은 savings_kwh만 생성, 단가는 cashback_unit_rate()로 적용
 - [x] 시간대 이동 권고 제외 — 총 kWh 절감 없음, 에너지캐시백 기준 미충족
+- [x] 멀티에이전트 설계 확정 — 수퍼바이저 패턴, Module 2·3·5 역할 분리, Module 4 RAG는 보류
 
 ## 미결 사항
 
@@ -225,3 +384,9 @@ kpx-integration-settlement/
 - [ ] 신규 가구 기준선 Proxy: 군집 평균 kWh 기준값 측정 필요
 - [ ] monthly_baselines 사전 계산 시점 (매월 1일 배치)
 - [ ] appliance_status_intervals 실데이터 연결 (현재 목업 12건 — NILM 엔진 실 추론 결과 대기)
+- [ ] Module 2 구현: NILM 모니터링 에이전트 (`nilm_monitor.py`)
+- [ ] Module 3 구현: 캐시백 계산 노드 (`cashback_node.py`)
+- [ ] Module 5 구현: AI 진단 리포트 에이전트 (`report_agent.py`)
+- [ ] Supervisor 구현: LangGraph StateGraph (`supervisor.py`)
+- [ ] insights.py 라우터 전환: run_graph → run_multi_agent
+- [ ] Module 4 (지식 검색 RAG): 문서 소싱 결정 후 설계 추가 예정
