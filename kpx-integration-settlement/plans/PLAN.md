@@ -382,7 +382,7 @@ def run_multi_agent(household_id: str) -> InsightsLLMOutput:
 ## 미결 사항
 
 - [x] 캐시백 단가 구간 KEPCO 공식 확인 — 30/60/80/100원/kWh (en-ter.co.kr, '24년 1월~)
-- [ ] 신규 가구 기준선 Proxy: 군집 평균 kWh 기준값 측정 필요
+- [x] 신규 가구 기준선 Proxy: **해당 없음** — KEPCO 에너지캐시백 참여 요건상 직전 1개년 동월 사용량 미보유 고객은 신청 제외 대상이므로 proxy 기준선 불필요
 - [ ] monthly_baselines 사전 계산 시점 (매월 1일 배치)
 - [ ] appliance_status_intervals 실데이터 연결 (현재 목업 12건 — NILM 엔진 실 추론 결과 대기)
 - [x] Module 2 구현: NILM 모니터링 에이전트 (`nilm_monitor.py`)
