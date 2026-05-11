@@ -6,10 +6,11 @@
 ## 이 브랜치에서 작업 시작 체크리스트
 
 1. `config/.env.example`을 복사해 `config/.env` 생성 후 실제 값 입력
-2. `pip install openai celery redis xgboost`
+2. `pip install openai celery redis xgboost langgraph langchain-openai langchain-core`
 3. `OPENAI_API_KEY` 환경변수 확인
 4. 도구 smoke test: `python -c "from src.agent.data_tools import get_household_profile; print(get_household_profile('HH001')['summary'])"`
 5. 코치 에이전트 실행: `python -c "from src.agent.coach import run_coach; print(run_coach('HH001', '이번 주 전기료 줄이려면?'))"`
+6. 멀티에이전트 실행: `python -c "from src.agent.multi_agent import run_multi_agent; print(run_multi_agent('HH001'))"`
 
 ## 로컬 API 서버 (Frontend 연결용, 2026-04-30~)
 
@@ -42,6 +43,19 @@ DEFAULT_HH=HH001 DB_PASSWORD=<secret> uvicorn src.api.main:app --reload --port 8
 | `src/agent/data_tools.py` | 8개 데이터 조회 도구 + mock 데이터 (3가구) + TOOL_SCHEMAS |
 | `src/agent/coach.py` | 코치 Agent loop (baseline 컨텍스트 주입 + function calling) |
 | `tests/test_data_tools.py` | 8개 도구 schema 검증 단위 테스트 |
+
+## 멀티에이전트 (수퍼바이저 패턴, 2026-05-11~)
+
+LangGraph StateGraph 기반. Module 2·3 병렬 실행 → Module 5 통합 ([설계 근거](plans/PLAN.md#멀티에이전트-아키텍처)).
+
+| 파일 | 역할 |
+|------|------|
+| `src/agent/multi_agent/supervisor.py` | StateGraph 빌드 + `run_multi_agent()` 진입점 |
+| `src/agent/multi_agent/nilm_monitor.py` | Module 2: 5개 도구 호출 → 이상탐지·기기 소비 구조화 |
+| `src/agent/multi_agent/cashback_node.py` | Module 3: 기준선·절감률·예상 캐시백 산정 (LLM 없음) |
+| `src/agent/multi_agent/report_agent.py` | Module 5: 이상 진단 + 절감 권고 생성 (structured LLM) |
+
+`insights.py`의 `/api/insights/summary`는 멀티에이전트를 우선 호출하고, 실패 시 단일 에이전트(`run_insights`)로 폴백.
 
 **4주차 실데이터 연결 완료** (2026-05-01):
 - `power_1hour` 기반: get_consumption_summary / get_cashback_history / get_tariff_info / get_hourly_appliance_breakdown / get_consumption_hourly / get_consumption_breakdown

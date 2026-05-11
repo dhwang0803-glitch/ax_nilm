@@ -4,11 +4,11 @@
 보정식:   유효 절감량 = 기준선 × min(절감률, 30%)  ← 30% 상한 적용
 내부식:   가전별 절감 기여 = 가전별 기준선 - 가전별 실측 (NILM 분해 결과)
 
-캐시백 단가 구조 (KEPCO 에너지마켓플레이스 기준, 변경 가능):
+캐시백 단가 구조 (KEPCO 에너지캐시백 '24년 1월분부터 적용):
   절감률 3% 미만      → 미지급
-  3% 이상 ~ 5% 미만  → 30원/kWh
-  5% 이상 ~ 10% 미만 → 50원/kWh
-  10% 이상 ~ 20% 미만→ 70원/kWh
+  3% 이상 ~ 5% 미만  →  30원/kWh
+  5% 이상 ~ 10% 미만 →  60원/kWh
+  10% 이상 ~ 20% 미만→  80원/kWh
   20% 이상 (30% 캡)  → 100원/kWh
 """
 from __future__ import annotations
@@ -17,15 +17,16 @@ from dataclasses import dataclass, field
 from datetime import date
 
 
-# 절감률 구간별 단가 (오름차순 — (최소 절감률, 단가)) — KEPCO 2024년 1월분 기준
-_CASHBACK_TIERS: list[tuple[float, float]] = [
-    (0.20, 100.0),
-    (0.10,  70.0),
-    (0.05,  50.0),
-    (0.03,  30.0),
-]
 _MIN_SAVINGS_RATE = 0.03   # 3% 미만 미지급
 _MAX_SAVINGS_RATE = 0.30   # 30% 초과분 미인정
+
+# 절감률 구간별 고정 단가 — (최소 절감률 이상, 단가), 내림차순
+_CASHBACK_TIERS: list[tuple[float, float]] = [
+    (0.20, 100.0),
+    (0.10,  80.0),
+    (0.05,  60.0),
+    (0.03,  30.0),
+]
 
 
 def get_cashback_unit_rate(savings_rate: float) -> float:
