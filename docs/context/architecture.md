@@ -107,6 +107,49 @@ flowchart TD
 2. 이벤트 기간 중 `power_1min` 실측 vs 기준부하 baseline 차이로 감축 실적 산출
 3. 정산 리포트 → 전력거래소로 전송 (`dr_performance` 신규 예정)
 
+### 흐름 5. 에너지 코칭 에이전트 — 멀티에이전트 수퍼바이저 (2026-05-11~)
+
+`kpx-integration-settlement/` (Frontend 브랜치 하위)에 LangGraph StateGraph 기반 수퍼바이저 패턴 구현.
+FastAPI `/api/insights/summary` 요청 시 트리거됨.
+
+```mermaid
+flowchart LR
+    subgraph Parallel["Module 2·3 병렬"]
+        NM["nilm_monitor\n(Module 2)\n5개 도구 호출\n이상탐지·기기 소비"]
+        CB["cashback\n(Module 3)\n기준선·절감률\n캐시백 산정 (LLM ✗)"]
+    end
+
+    START --> NM
+    START --> CB
+    NM --> RP
+    CB --> RP
+
+    subgraph Report["Module 5"]
+        RP["report_agent\n이상 진단 + 절감 권고\n(structured LLM)"]
+    end
+
+    RP --> OUT["InsightsLLMOutput\n→ /api/insights/summary"]
+```
+
+**데이터 경로**:
+1. `/api/insights/summary` 요청 → `get_or_run_insights()` → 인메모리 캐시 확인 (TTL 1h)
+2. 캐시 미스 → `run_multi_agent(household_id)` 호출
+3. Module 2: `get_anomaly_events`, `get_anomaly_log` 등 5개 tool call → NILM 출력 구조화
+4. Module 3: `get_consumption_summary`, `get_tariff_info`, `get_cashback_history` → 캐시백 산정 (LLM 없음)
+5. Module 5: Module 2·3 결과 합산 → structured LLM → `InsightsLLMOutput` (anomaly_diagnoses + recommendations)
+6. `savings_krw` 후처리: `cashback_unit_rate()` × `savings_kwh` (가구 실적 단가 적용)
+7. 실패 시 단일 에이전트 `run_insights()` 폴백
+
+**단가 구조 (KEPCO 에너지캐시백, '24년 1월~)**:
+
+| 절감률 | 단가 |
+|--------|------|
+| 3% 미만 | 미지급 |
+| 3% 이상 ~ 5% 미만 | 30원/kWh |
+| 5% 이상 ~ 10% 미만 | 60원/kWh |
+| 10% 이상 ~ 20% 미만 | 80원/kWh |
+| 20% 이상 (30% 캡) | 100원/kWh |
+
 ## 보안 경계 (REQ-007)
 
 - **PII 격리**: `household_pii` 테이블은 분석 역할이 직접 SELECT 불가. 관리자 전용 API 엔드포인트만 복호화 후 반환.
