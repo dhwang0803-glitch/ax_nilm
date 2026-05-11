@@ -1,0 +1,22 @@
+# FastAPI 코어
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+pydantic-settings==2.6.0
+
+# 인증
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# DB (USE_DB=true 일 때만 활용. 미설치여도 mock 응답은 동작)
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+pgvector==0.3.6
+
+# PII 복호화 (Database/src/repositories/pii_repository.py 와 동일 의존)
+cryptography==43.0.3
+
+# 개발/테스트
+httpx==0.27.2
+pytest==8.3.3
+pytest-asyncio==0.24.0

@@ -1,0 +1,245 @@
+{
+  "version": "1.0",
+  "created": "2026-04-28",
+  "description": "3주차 tool-use agent 평가 데이터셋. tool_precision/recall + 답변 키워드 자동 평가.",
+  "mock_data_snapshot": {
+    "reference_date": "2026-04-28",
+    "households": {
+      "HH001": {"type": "아파트 85㎡ 4인", "tier": 3, "baseline_kwh": 298.0, "mtd_kwh": 305},
+      "HH002": {"type": "빌라 52㎡ 2인",   "tier": 1, "baseline_kwh": 145.0, "mtd_kwh": 142},
+      "HH003": {"type": "아파트 115㎡ 1인", "tier": 2, "baseline_kwh": 92.0,  "mtd_kwh": 248}
+    }
+  },
+  "evaluation_notes": {
+    "tool_match": "golden_tools 모두 호출 시 precision=1.0. 불필요 도구 추가 호출은 recall은 유지하되 precision 감점.",
+    "answer_keys": "expected_answer_keys 중 응답 텍스트에 포함된 비율로 answer_score 산출.",
+    "empty_tools": "golden_tools=[] 이면 tool_calls=[] 이 기대값. 도구 호출 시 precision=0."
+  },
+  "tasks": [
+    {
+      "id": "GT001",
+      "category": "단순조회",
+      "household_id": "HH001",
+      "query": "우리 집 어떤 가전 쓰고 있어?",
+      "golden_tools": ["get_household_profile"],
+      "expected_answer_keys": ["에어컨", "냉장고", "세탁기"],
+      "notes": "가전 목록 단순 조회. 에어컨 1등급·냉장고 2등급·세탁기 3등급 포함."
+    },
+    {
+      "id": "GT002",
+      "category": "단순조회",
+      "household_id": "HH001",
+      "query": "이번 주 서울 날씨 어땠어?",
+      "golden_tools": ["get_weather"],
+      "expected_answer_keys": ["°C", "서울", "날씨"],
+      "notes": "2026-04-21~27 서울 평균 18.3°C, 비 2.5mm."
+    },
+    {
+      "id": "GT003",
+      "category": "단순조회",
+      "household_id": "HH001",
+      "query": "이번 주 전기 얼마나 썼어?",
+      "golden_tools": ["get_consumption_summary"],
+      "expected_answer_keys": ["92.3", "kWh", "13.2"],
+      "notes": "직전 7일 총 92.3kWh, 일 평균 13.2kWh, 전년 대비 +18%."
+    },
+    {
+      "id": "GT004",
+      "category": "단순조회",
+      "household_id": "HH002",
+      "query": "어제 시간대별 전기 사용 패턴 보여줘",
+      "golden_tools": ["get_consumption_hourly"],
+      "expected_answer_keys": ["시", "kWh", "피크"],
+      "notes": "HH002 피크 7~8시(출근 준비), 18시(귀가)."
+    },
+    {
+      "id": "GT005",
+      "category": "단순조회",
+      "household_id": "HH001",
+      "query": "어제 어떤 가전이 전기 가장 많이 썼어?",
+      "golden_tools": ["get_consumption_breakdown"],
+      "expected_answer_keys": ["에어컨", "4.2", "35%"],
+      "notes": "HH001 NILM 분해 1위: 에어컨 4.2kWh(35%)."
+    },
+    {
+      "id": "GT006",
+      "category": "단순조회",
+      "household_id": "HH001",
+      "query": "그동안 에너지캐시백 이력 조회해줘",
+      "golden_tools": ["get_cashback_history"],
+      "expected_answer_keys": ["지급완료", "2026-03", "집계중"],
+      "notes": "2개월 지급완료(02·03월), 04월 집계중."
+    },
+    {
+      "id": "GT007",
+      "category": "단순조회",
+      "household_id": "HH001",
+      "query": "지금 몇 단계 누진 요금제야?",
+      "golden_tools": ["get_tariff_info"],
+      "expected_answer_keys": ["3단계", "305", "85,400"],
+      "notes": "HH001 3단계 305kWh, 예상 청구액 85,400원."
+    },
+    {
+      "id": "GT008",
+      "category": "복합분석",
+      "household_id": "HH001",
+      "query": "전기 많이 쓰는 가전 알려주고 절감 방법도 제안해줘",
+      "golden_tools": ["get_consumption_breakdown", "get_household_profile"],
+      "expected_answer_keys": ["에어컨", "35%", "절감"],
+      "notes": "분해(에어컨 35%) + 프로필(1등급) 조합 → 설정온도·사용시간 권고."
+    },
+    {
+      "id": "GT009",
+      "category": "복합분석",
+      "household_id": "HH001",
+      "query": "저녁 피크 시간대 전기 사용을 줄이면 전기료 얼마나 아낄 수 있어?",
+      "golden_tools": ["get_consumption_summary", "get_tariff_info"],
+      "expected_answer_keys": ["19", "21시", "3단계", "280"],
+      "notes": "피크 19~21시 2.1kW + 3단계 280.6원/kWh → 절감 금액 추산."
+    },
+    {
+      "id": "GT010",
+      "category": "복합분석",
+      "household_id": "HH002",
+      "query": "다음 주 날씨가 더워진다고 하는데 전기 더 쓸까?",
+      "golden_tools": ["get_forecast", "get_consumption_summary"],
+      "expected_answer_keys": ["예보", "기온", "소비"],
+      "notes": "예보(최고 29°C 예정) + HH002 소비패턴(냉방 가전 없음) 조합."
+    },
+    {
+      "id": "GT011",
+      "category": "복합분석",
+      "household_id": "HH001",
+      "query": "누진 2단계로 내려가려면 앞으로 얼마나 아껴야 해?",
+      "golden_tools": ["get_tariff_info"],
+      "expected_answer_keys": ["3단계", "200", "이미"],
+      "notes": "HH001 현재 305kWh, 2단계 임계 200kWh → 이미 초과. 이번 달 불가."
+    },
+    {
+      "id": "GT012",
+      "category": "복합분석",
+      "household_id": "HH001",
+      "query": "이번 달 전기료 예상이 85,000원이나 되는데 이유가 뭐야?",
+      "golden_tools": ["get_tariff_info", "get_consumption_breakdown"],
+      "expected_answer_keys": ["3단계", "280", "에어컨"],
+      "notes": "3단계 280.6원/kWh + 에어컨 35% 비중 조합 설명."
+    },
+    {
+      "id": "GT013",
+      "category": "복합분석",
+      "household_id": "HH001",
+      "query": "지난달 캐시백 받았어? 이번 달은 어떻게 되고 있어?",
+      "golden_tools": ["get_cashback_history", "get_tariff_info"],
+      "expected_answer_keys": ["2026-03", "지급완료", "1,440", "집계중"],
+      "notes": "3월 지급완료 1,440원, 4월 집계중 상태 확인."
+    },
+    {
+      "id": "GT014",
+      "category": "복합분석",
+      "household_id": "HH001",
+      "query": "에어컨 교체하면 전기 얼마나 줄일 수 있어?",
+      "golden_tools": ["get_household_profile", "get_consumption_breakdown"],
+      "expected_answer_keys": ["에어컨", "1등급", "35%"],
+      "notes": "에어컨 이미 1등급 → 효율 개선 여지 낮음, 운용(설정온도·시간) 권고."
+    },
+    {
+      "id": "GT015",
+      "category": "복합분석",
+      "household_id": "HH002",
+      "query": "이번 주 전기 사용이 전년 대비 줄었어? 캐시백 기대할 수 있을까?",
+      "golden_tools": ["get_consumption_summary", "get_cashback_history"],
+      "expected_answer_keys": ["-5%", "3%", "월별"],
+      "notes": "yoy -5%는 주간 지표. 캐시백은 월별 3% 절감 기준 별도 판단 필요."
+    },
+    {
+      "id": "GT016",
+      "category": "캐시백",
+      "household_id": "HH001",
+      "query": "이번 달 캐시백 받을 수 있어?",
+      "golden_tools": ["estimate_cashback_potential", "get_cashback_history"],
+      "expected_answer_keys": ["298", "326", "초과", "불가"],
+      "notes": "HH001 기준 298kWh, 현재 페이스 예상 326.8kWh → 9.7% 초과, 캐시백 불가."
+    },
+    {
+      "id": "GT017",
+      "category": "캐시백",
+      "household_id": "HH002",
+      "query": "3% 절감 목표 달성하려면 앞으로 얼마나 더 줄여야 해?",
+      "golden_tools": ["estimate_cashback_potential"],
+      "expected_answer_keys": ["145", "140", "초과"],
+      "notes": "HH002 기준 145kWh, 목표 140.7kWh, MTD 142 → 이미 초과."
+    },
+    {
+      "id": "GT018",
+      "category": "캐시백",
+      "household_id": "HH001",
+      "query": "캐시백 받으려면 이번 달 총 몇 kWh 이하로 써야 해?",
+      "golden_tools": ["estimate_cashback_potential"],
+      "expected_answer_keys": ["289", "297", "불가"],
+      "notes": "3% 목표: 298 × 0.97 = 289.1kWh. MTD 305 → 이미 초과."
+    },
+    {
+      "id": "GT019",
+      "category": "캐시백",
+      "household_id": "HH001",
+      "query": "지금까지 캐시백으로 얼마 받았어?",
+      "golden_tools": ["get_cashback_history"],
+      "expected_answer_keys": ["4,770", "지급완료", "2개월"],
+      "notes": "HH001 누적: 3,330 + 1,440 = 4,770원 지급완료."
+    },
+    {
+      "id": "GT020",
+      "category": "캐시백",
+      "household_id": "HH002",
+      "query": "2월엔 캐시백 못 받았는데 3월엔 받았어. 4월엔 어떨 것 같아?",
+      "golden_tools": ["get_cashback_history", "estimate_cashback_potential"],
+      "expected_answer_keys": ["2.8%", "미달", "8.4%", "초과"],
+      "notes": "2월 2.8% 미달, 3월 8.4% 지급완료, 4월 현재 페이스 초과 전망."
+    },
+    {
+      "id": "GT021",
+      "category": "엣지케이스",
+      "household_id": "HH001",
+      "query": "지금 냉장고 켜져 있어?",
+      "golden_tools": ["get_consumption_breakdown"],
+      "expected_answer_keys": ["냉장고", "00:00", "23:59"],
+      "notes": "실시간 상태 조회 불가. NILM 분해로 24시간 상시 가동(00:00~23:59) 확인."
+    },
+    {
+      "id": "GT022",
+      "category": "엣지케이스",
+      "household_id": "HH001",
+      "query": "에너지 절약하는 일반적인 방법 알려줘",
+      "golden_tools": [],
+      "expected_answer_keys": ["절약", "전기"],
+      "notes": "일반 상식 질문 → 도구 불필요. tool_calls=[] 기대."
+    },
+    {
+      "id": "GT023",
+      "category": "엣지케이스",
+      "household_id": "HH002",
+      "query": "내일 날씨 어때?",
+      "golden_tools": ["get_forecast"],
+      "expected_answer_keys": ["2026-04-29", "예보", "°C"],
+      "notes": "days_ahead=1 또는 7. 2026-04-29 예보: 평균 19.5°C, 비 3.0mm."
+    },
+    {
+      "id": "GT024",
+      "category": "엣지케이스",
+      "household_id": "HH003",
+      "query": "우리 집 1인 가구인데 전기세가 왜 이렇게 많이 나와?",
+      "golden_tools": ["get_tariff_info", "get_consumption_breakdown"],
+      "expected_answer_keys": ["2단계", "컴퓨터", "48%"],
+      "notes": "HH003 1인 115㎡, 컴퓨터 48.6% 최대 소비원 → 심야 사용 패턴 설명."
+    },
+    {
+      "id": "GT025",
+      "category": "엣지케이스",
+      "household_id": "HH001",
+      "query": "주말에 세탁기 돌리는 게 전기료에 얼마나 영향 줘?",
+      "golden_tools": ["get_consumption_breakdown", "get_tariff_info"],
+      "expected_answer_keys": ["세탁기", "0.8", "280"],
+      "notes": "세탁기 0.8kWh(6.7%) × 3단계 280.6원/kWh ≈ 224원/회."
+    }
+  ]
+}

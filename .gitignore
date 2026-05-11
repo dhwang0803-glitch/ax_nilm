@@ -208,13 +208,32 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Agent session traces (may contain household tokens)
+logs/traces/
+
+# Dataset staging (AI Hub 등 외부 대용량 원본/샘플/설명서 — git 추적 제외)
+Database/dataset_staging/
+
 # Claude Code
 .claude/settings.local.json
 
 # Local design artifacts
 co_docs/
 
+# Datasets (large binary files — manage via DVC or manual upload)
+datasets/
+nilm-engine/datasets/
+
+# nilm-engine 내부 작업 문서 (로컬 전용)
+nilm-engine/docs/
+
+# nilm-engine 로컬 실험 (GitHub 미업로드)
+nilm-engine/experiments/
+
 # Secrets & credentials
 *.pem
 *.key
 credentials.json
+
+# Team-internal demo guide (Google Drive 공유용 — git 추적 제외)
+DEMO_GUIDE.md

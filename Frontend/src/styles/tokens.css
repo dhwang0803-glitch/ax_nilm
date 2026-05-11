@@ -1,0 +1,23 @@
+:root {
+  --bg: #f4f4f5;
+  --canvas: #ffffff;
+  --ink-1: #18181b;
+  --ink-2: #3f3f46;
+  --ink-3: #71717a;
+  --ink-4: #a1a1aa;
+  --line-1: #18181b;
+  --line-2: #d4d4d8;
+  --line-3: #e4e4e7;
+  --fill-1: #f4f4f5;
+  --fill-2: #e4e4e7;
+  --fill-3: #d4d4d8;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--ink-1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
