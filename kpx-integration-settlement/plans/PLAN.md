@@ -377,6 +377,7 @@ def run_multi_agent(household_id: str) -> InsightsLLMOutput:
 - [x] savings_krw Python 후처리 — LLM은 savings_kwh만 생성, 단가는 cashback_unit_rate()로 적용
 - [x] 시간대 이동 권고 제외 — 총 kWh 절감 없음, 에너지캐시백 기준 미충족
 - [x] 멀티에이전트 설계 확정 — 수퍼바이저 패턴, Module 2·3·5 역할 분리, Module 4 RAG는 보류
+- [x] 멀티에이전트 구현 완료 — `src/agent/multi_agent/` (4파일), insights.py 라우터 전환
 
 ## 미결 사항
 
@@ -384,9 +385,9 @@ def run_multi_agent(household_id: str) -> InsightsLLMOutput:
 - [ ] 신규 가구 기준선 Proxy: 군집 평균 kWh 기준값 측정 필요
 - [ ] monthly_baselines 사전 계산 시점 (매월 1일 배치)
 - [ ] appliance_status_intervals 실데이터 연결 (현재 목업 12건 — NILM 엔진 실 추론 결과 대기)
-- [ ] Module 2 구현: NILM 모니터링 에이전트 (`nilm_monitor.py`)
-- [ ] Module 3 구현: 캐시백 계산 노드 (`cashback_node.py`)
-- [ ] Module 5 구현: AI 진단 리포트 에이전트 (`report_agent.py`)
-- [ ] Supervisor 구현: LangGraph StateGraph (`supervisor.py`)
-- [ ] insights.py 라우터 전환: run_graph → run_multi_agent
+- [x] Module 2 구현: NILM 모니터링 에이전트 (`nilm_monitor.py`)
+- [x] Module 3 구현: 캐시백 계산 노드 (`cashback_node.py`)
+- [x] Module 5 구현: AI 진단 리포트 에이전트 (`report_agent.py`)
+- [x] Supervisor 구현: LangGraph StateGraph (`supervisor.py`)
+- [x] insights.py 라우터 전환: run_graph → run_multi_agent (단일 에이전트 폴백 유지)
 - [ ] Module 4 (지식 검색 RAG): 문서 소싱 결정 후 설계 추가 예정
