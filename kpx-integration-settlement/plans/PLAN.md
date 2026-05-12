@@ -130,12 +130,12 @@ ch02~ch23 월별 합산 vs 동월 2개년 평균 비교
 → UI 가전별 기여 파이차트 표시용
 ```
 
-가전별 절감 유형 분류 (에너지캐시백 맥락):
-- **설정 조정형** (실제 kWh 절감): 에어컨(온도 1°C 조정), 전기장판·온수매트(온도 단계 낮추기), 인덕션(화력 단계 낮추기)
-- **효율 사용형** (실제 kWh 절감): 전기포트(필요한 양만), 전기밥솥(취사 예약 활용), 전기다리미(모아서 한 번에)
+가전별 절감 유형 분류 — NILM 22종 (에너지캐시백 맥락):
+- **설정 조정형** (실제 kWh 절감): 에어컨(온도 1°C 조정), 인덕션(화력 단계 낮추기), 전기장판/담요·온수매트(온도 단계 낮추기), 제습기(습도 설정 최적화)
+- **효율 사용형** (실제 kWh 절감): 전기포트(필요한 양만), 전기밥솥(취사 예약 활용), 전기다리미(모아서 한 번에), 헤어드라이기(저온 모드·단시간), 에어프라이어(적정 온도·시간), 진공청소기(흡입력 단계 조정), 전자레인지(출력 조정)
 - **절전 설정형** (실제 kWh 절감): TV·컴퓨터(절전 모드·취침 타이머), 선풍기(풍속 낮추기), 공기청정기(자동·취침 모드)
 - **대기전력 차단형** (실제 kWh 절감): 무선공유기·셋톱박스(장시간 미사용 시 전원 차단)
-- **상시 가동형** (절감 대상 외): 냉장고·김치냉장고(온도 설정 최적화·도어·코일 점검만)
+- **상시 가동형** (절감 대상 외): 일반냉장고·김치냉장고(온도 설정 최적화·도어·코일 점검만)
 
 > 시간대 이동(심야/오전 예약)은 총 kWh를 줄이지 않으므로 에너지캐시백 절감 권고에서 제외.
 
@@ -219,7 +219,35 @@ kpx-integration-settlement/
 
 ## 멀티에이전트 아키텍처 (수퍼바이저 패턴)
 
-> Module 4 (지식 검색 RAG)는 문서 소싱 후 별도 추가 예정. 현재는 4개 모듈만 구현.
+> Module 4 (지식 검색 RAG)는 설계 확정 후 구현 예정. 현재는 4개 모듈만 구현.
+
+## Module 4 — 지식 검색 RAG 설계
+
+### 목적
+캐시백·에너지효율 앱을 **사용하지 않는** 잠재 고객을 대상으로,
+"왜 참여해야 하는가 → 어떻게 시작하는가 → 어떻게 절약하는가"에 답하는 지식 검색.
+
+### 벡터스토어
+- **pgvector** (기존 PostgreSQL 인프라 활용, 별도 프로세스 불필요)
+- 임베딩 모델: `text-embedding-3-small` (OpenAI)
+- 청크 단위: 512 토큰, 50 토큰 overlap
+
+### RAG 문서 목록 (`rag_docs/raw/`)
+
+| 파일 | 내용 | 카테고리 |
+|------|------|----------|
+| `guide_cashback_enrollment.md` | 에너지캐시백 신청 방법, 자격 조건, 기준 사용량 산정 | 가입 가이드 |
+| `guide_baseline_explained.md` | 기준 사용량 산정 방식 (동월 작년 대비, 클러스터 평균) | 가입 가이드 |
+| `tips_appliance_patterns.md` | 22종 가전 전체 절감 팁, 6유형 분류 (설정 조정·효율 사용·절전 설정·대기전력 차단·상시 가동·시간대 이동) | 절감 팁 |
+| `tips_peak_hours.md` | 시간대별 누진 구간 진입 시점, 피크 회피 행동 | 절감 팁 |
+| `policy_cashback_tiers.md` | 절감률별 단가 (≥3%→30원, ≥5%→60원, ≥10%→80원, ≥20%→100원) | 정책 참조 |
+| `policy_progressive_rate.md` | 누진제 구간 기준 (2024년 개정, 여름철 완화 조건) | 정책 참조 |
+| `policy_measurement_period.md` | 측정 기간, 검침일 기준, 비교 방식 공식 정의 | 정책 참조 |
+
+### 소싱 방식
+- **수동 작성** — 크롤링 시도했으나 한전(로그인 필수)·K-Point(봇 차단) 모두 차단됨
+- 조사 자료(Trendmonitor·한국전력포인트·한국소비자원 등) 및 KEPCO 공식 정책 기반으로 직접 작성
+- 스크립트 잔존: `scripts/crawl_rag_docs.py` (향후 공개 페이지 추가 시 재활용 가능)
 
 ### 전체 흐름
 
@@ -383,11 +411,14 @@ def run_multi_agent(household_id: str) -> InsightsLLMOutput:
 
 - [x] 캐시백 단가 구간 KEPCO 공식 확인 — 30/60/80/100원/kWh (en-ter.co.kr, '24년 1월~)
 - [x] 신규 가구 기준선 Proxy: **해당 없음** — KEPCO 에너지캐시백 참여 요건상 직전 1개년 동월 사용량 미보유 고객은 신청 제외 대상이므로 proxy 기준선 불필요
-- [ ] monthly_baselines 사전 계산 시점 (매월 1일 배치)
+- [x] monthly_baselines 사전 계산 시점 (매월 1일 배치) — `src/tasks/batch_compute.py` 구현 완료 (refresh_all_baselines / finalize_cashback_results / refresh_household_baseline)
 - [ ] appliance_status_intervals 실데이터 연결 (현재 목업 12건 — NILM 엔진 실 추론 결과 대기)
 - [x] Module 2 구현: NILM 모니터링 에이전트 (`nilm_monitor.py`)
 - [x] Module 3 구현: 캐시백 계산 노드 (`cashback_node.py`)
 - [x] Module 5 구현: AI 진단 리포트 에이전트 (`report_agent.py`)
 - [x] Supervisor 구현: LangGraph StateGraph (`supervisor.py`)
 - [x] insights.py 라우터 전환: run_graph → run_multi_agent (단일 에이전트 폴백 유지)
-- [ ] Module 4 (지식 검색 RAG): 문서 소싱 결정 후 설계 추가 예정
+- [x] Module 4 (지식 검색 RAG): rag_docs/raw/ 7개 문서 수동 작성 완료 + pgvector 임베딩 파이프라인 구현 완료
+  - `scripts/create_rag_table.sql` — pgvector 스키마 (rag_chunks 테이블 + IVFFLAT 인덱스)
+  - `scripts/embed_rag_docs.py` — 512토큰/50 overlap 청크 + text-embedding-3-small + UPSERT
+  - `src/agent/rag_retriever.py` — `retrieve(query, k, category)` / `retrieve_with_scores()`
