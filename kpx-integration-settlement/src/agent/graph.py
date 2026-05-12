@@ -16,8 +16,6 @@ from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import create_react_agent
-from pydantic import BaseModel, Field
-
 from .anonymizer import scrub_tool_output, validate_no_pii
 from .data_tools import (
     get_anomaly_events,
@@ -31,6 +29,7 @@ from .data_tools import (
     get_tariff_info,
     get_weather,
 )
+from .schemas import AnomalyDiagnosis, InsightsLLMOutput, SavingsRec  # noqa: F401
 from .trace_logger import TraceLogger
 from .validator import validate_answer
 
@@ -212,25 +211,6 @@ def run_graph(
     }
 
 
-# ── Insights 출력 스키마 ──────────────────────────────────────────────────────
-
-class AnomalyDiagnosis(BaseModel):
-    event_id: str
-    diagnosis: str = Field(max_length=100)
-    action: str = Field(max_length=15)
-
-
-class SavingsRec(BaseModel):
-    title: str = Field(max_length=30)
-    savings_kwh: float = Field(ge=0.1, le=10.0)
-    savings_krw: int = Field(default=0, ge=0)  # Python 후처리에서 에너지캐시백 단가 적용
-
-
-class InsightsLLMOutput(BaseModel):
-    anomaly_diagnoses: list[AnomalyDiagnosis]
-    recommendations: list[SavingsRec] = Field(min_length=3, max_length=5)
-
-
 _INSIGHTS_SYSTEM = """\
 한국 가정 전력 전문 코치. 이상 탐지 데이터를 보고 아래 JSON 형식으로만 응답.
 
@@ -248,17 +228,6 @@ action: 2~6자 명사형 (예: "가스켓 점검", "필터 청소") — 사용 �
 3~5개. title: 시간대·수치·기기명 조합 (30자 이내). savings_kwh: 0.1~10.0 kWh.
 가전 교체·구매 금지. 각 항목은 서로 다른 시간대. 0.1 kWh 미만 기기 제외.
 E_NOT_FOUND/E_NO_DATA → recommendations 빈 배열([])."""
-
-
-def cashback_unit_rate(household_id: str) -> float:
-    """가구의 최근 지급완료 캐시백 이력에서 단가(원/kWh)를 추출. 없으면 50 반환."""
-    history = get_cashback_history(household_id)
-    paid = [r for r in history.get("raw", []) if r.get("status") == "지급완료"]
-    if paid:
-        rate = paid[-1].get("cashback_rate_krw_per_kwh")
-        if rate is not None:
-            return float(rate)
-    return 50.0
 
 
 def run_insights(household_id: str) -> InsightsLLMOutput:

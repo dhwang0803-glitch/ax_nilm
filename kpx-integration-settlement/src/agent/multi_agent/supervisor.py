@@ -14,8 +14,8 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
-from ..graph import InsightsLLMOutput, cashback_unit_rate
-from .cashback_node import cashback_node_fn
+from ..schemas import InsightsLLMOutput
+from .cashback_node import cashback_node_fn, cashback_unit_rate
 from .nilm_monitor import nilm_monitor_node
 from .report_agent import report_node
 

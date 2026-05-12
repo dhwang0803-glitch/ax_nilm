@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from ..data_tools import get_weather
-from ..graph import InsightsLLMOutput
+from ..schemas import InsightsLLMOutput
 
 
 # ── 시스템 프롬프트 ─────────────────────────────────────────────────────────────

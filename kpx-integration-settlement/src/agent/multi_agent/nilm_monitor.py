@@ -14,8 +14,6 @@ from pydantic import BaseModel, Field
 
 from ..data_tools import (
     get_anomaly_events,
-    get_anomaly_log,
-    get_consumption_breakdown,
     get_consumption_hourly,
     get_hourly_appliance_breakdown,
 )
@@ -55,10 +53,8 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     hh = state["household_id"]
 
     events_data    = get_anomaly_events(hh, status="active")
-    log_data       = get_anomaly_log(hh)
     breakdown_data = get_hourly_appliance_breakdown(hh)
     hourly_data    = get_consumption_hourly(hh)
-    _              = get_consumption_breakdown(hh)   # LLM 컨텍스트용 (직접 파싱 안 함)
 
     raw_events   = events_data.get("raw", [])
     daily_summary = breakdown_data.get("daily_summary", [])

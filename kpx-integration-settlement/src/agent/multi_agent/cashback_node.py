@@ -11,7 +11,34 @@ from typing import Any
 from pydantic import BaseModel
 
 from ..data_tools import get_cashback_history, get_tariff_info
-from ...settlement.calculator import get_cashback_unit_rate
+
+
+# KEPCO 에너지캐시백 단가 테이블 (절감률 → 원/kWh)
+_CASHBACK_TIERS: list[tuple[float, float]] = [
+    (0.20, 100.0),
+    (0.10,  80.0),
+    (0.05,  60.0),
+    (0.03,  30.0),
+]
+
+
+def _tier_rate(savings_rate: float) -> float:
+    """절감률에 따른 캐시백 단가(원/kWh) 반환. 미달 시 0."""
+    for threshold, rate in _CASHBACK_TIERS:
+        if savings_rate >= threshold:
+            return rate
+    return 0.0
+
+
+def cashback_unit_rate(household_id: str) -> float:
+    """가구의 최근 지급완료 캐시백 이력에서 단가(원/kWh) 조회. 없으면 50 반환."""
+    history = get_cashback_history(household_id)
+    paid = [r for r in history.get("raw", []) if r.get("status") == "지급완료"]
+    if paid:
+        rate = paid[-1].get("cashback_rate_krw_per_kwh")
+        if rate is not None:
+            return float(rate)
+    return 50.0
 
 
 # ── 출력 스키마 ────────────────────────────────────────────────────────────────
@@ -71,7 +98,7 @@ def cashback_node_fn(state: dict[str, Any]) -> dict[str, Any]:
     else:
         savings_rate = 0.0
 
-    rate_per_kwh       = get_cashback_unit_rate(savings_rate)
+    rate_per_kwh       = _tier_rate(savings_rate)
     effective_savings  = baseline_kwh * min(savings_rate, 0.30)
     projected_krw      = int(effective_savings * rate_per_kwh)
 
