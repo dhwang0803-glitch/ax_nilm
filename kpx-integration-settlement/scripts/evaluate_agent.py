@@ -5,16 +5,23 @@
     python scripts/evaluate_agent.py --experiment "rag-node-v2"
 
 평가 대상: run_multi_agent() (nilm_monitor + cashback + rag_retriever + report)
-평가 항목:
+평가 항목 (규칙 기반):
   - schema_valid        : 출력 스키마 필드 존재 여부
   - rec_count           : 권고 3~5개 범위
   - savings_range       : savings_kwh 0.1~10.0 범위 준수
   - field_length        : title ≤30자, action ≤15자, diagnosis ≤100자
-  - safety              : 필수 가전 사용 중단 / 금지 표현 부재 (규칙)
-  - cashback_compliance : 캐시백 단계 요율·조건 일치 여부 (규칙)
-  - rec_relevance       : NILM top_consumers ↔ 권고 논리적 연결 (LLM judge)
-  - rag_faithfulness    : RAG 청크 ↔ 진단·권고 내용 일치 여부 (LLM judge)
-  - llm_quality         : LLM-as-judge (진단·권고 실용성)
+  - safety              : 필수 가전 사용 중단 / 금지 표현 부재
+  - cashback_compliance : 캐시백 단계 요율·조건 일치 여부
+  - rec_uniqueness      : 동일 기기명 중복 권고 탐지
+  - seasonal_alignment  : 기온 기준 냉·난방 가전 권고 방향 일치
+  - anomaly_coverage    : 이상 이벤트 대비 진단 커버리지 비율
+평가 항목 (LLM judge):
+  - rec_relevance       : NILM top_consumers ↔ 권고 논리적 연결
+  - rag_faithfulness    : RAG 청크 ↔ 진단·권고 내용 일치 여부
+  - llm_quality         : 진단·권고 실용성 종합
+평가 항목 (메트릭):
+  - latency             : 그래프 실행 지연 시간 (SLA 30s)
+  - cost_estimate       : 가구당 LLM 비용 추정 (원)
 """
 from __future__ import annotations
 
@@ -40,18 +47,45 @@ TEST_CASES = [{"household_id": f"HH{n:03d}"} for n in range(1, 51)]
 
 def target(inputs: dict) -> dict:
     """그래프를 직접 invoke해 중간 상태(_nilm_output 등)도 함께 반환한다."""
+    import time
+    from datetime import date, timedelta
     from src.agent.multi_agent.supervisor import _get_graph
     from src.agent.multi_agent.cashback_node import cashback_unit_rate
     from src.agent.schemas import InsightsLLMOutput
+    from src.agent.data_tools import get_weather
 
     hh = inputs["household_id"]
-    result = _get_graph().invoke({
-        "household_id":    hh,
-        "nilm_output":     {},
-        "cashback_output": {},
-        "rag_context":     [],
-        "final_output":    {},
-    })
+
+    # 토큰 추적 (langchain_community 없으면 무시)
+    try:
+        from langchain_community.callbacks import get_openai_callback
+        _has_cb = True
+    except ImportError:
+        _has_cb = False
+
+    t0 = time.time()
+    if _has_cb:
+        with get_openai_callback() as _cb:
+            result = _get_graph().invoke({
+                "household_id":    hh,
+                "nilm_output":     {},
+                "cashback_output": {},
+                "rag_context":     [],
+                "final_output":    {},
+            })
+        token_count = _cb.total_tokens
+        cost_usd    = _cb.total_cost
+    else:
+        result = _get_graph().invoke({
+            "household_id":    hh,
+            "nilm_output":     {},
+            "cashback_output": {},
+            "rag_context":     [],
+            "final_output":    {},
+        })
+        token_count = None
+        cost_usd    = None
+    latency_ms = int((time.time() - t0) * 1000)
 
     final = result.get("final_output") or {}
     output = InsightsLLMOutput(**final)
@@ -60,11 +94,19 @@ def target(inputs: dict) -> dict:
     for rec in output.recommendations:
         rec.savings_krw = round(rec.savings_kwh * unit_rate)
 
+    today = date.today()
+    date_range = [(today - timedelta(days=7)).isoformat(), today.isoformat()]
+    weather_raw = get_weather(date_range).get("raw", [])
+
     out = output.model_dump()
     # 언더스코어 prefix: 중간 상태 (평가자용, LangSmith UI에는 표시되나 주요 지표 아님)
     out["_nilm_output"]     = result.get("nilm_output") or {}
     out["_cashback_output"] = result.get("cashback_output") or {}
     out["_rag_context"]     = result.get("rag_context") or []
+    out["_weather"]         = weather_raw
+    out["_latency_ms"]      = latency_ms
+    out["_token_count"]     = token_count
+    out["_cost_usd"]        = cost_usd
     return out
 
 
@@ -326,6 +368,123 @@ def rag_faithfulness(outputs: dict, **kwargs) -> dict:
     return {"key": "rag_faithfulness", "score": score, "comment": text}
 
 
+# ── 추가 평가자 (품질·비용·안전) ──────────────────────────────────────────────
+
+def rec_uniqueness(outputs: dict, **kwargs) -> dict:
+    """동일 기기명 중복 권고 탐지 — top_consumers 기기명 기준."""
+    recs = outputs.get("recommendations", [])
+    nilm = outputs.get("_nilm_output", {})
+    known = [tc["appliance"] for tc in nilm.get("top_consumers", [])]
+
+    seen: dict[str, str] = {}
+    violations: list[str] = []
+    for r in recs:
+        title = r.get("title", "")
+        for app in known:
+            if app in title:
+                if app in seen:
+                    violations.append(f"'{app}' 중복")
+                else:
+                    seen[app] = title
+
+    ok = len(violations) == 0
+    return {"key": "rec_uniqueness", "score": int(ok),
+            "comment": "; ".join(dict.fromkeys(violations)) if violations else "전체 통과"}
+
+
+# 기온 기준 냉·난방 방향 (report_agent 시스템 프롬프트와 동기화)
+_COOLING_APPLIANCES = ["에어컨", "선풍기"]
+_HEATING_APPLIANCES = ["전기장판", "온수매트", "전열기", "히터", "전기히터"]
+_HOT_THRESHOLD  = 23.0   # °C 이상 → 여름
+_COLD_THRESHOLD = 12.0   # °C 이하 → 겨울
+
+
+def seasonal_alignment(outputs: dict, **kwargs) -> dict:
+    """기온 기준 냉·난방 가전 권고 방향 일치 확인."""
+    weather = outputs.get("_weather", [])
+    recs    = outputs.get("recommendations", [])
+
+    # _weather = list[{"date": ..., "tavg": float, ...}]
+    temps = [d["tavg"] for d in weather if isinstance(d, dict) and "tavg" in d]
+    if not temps:
+        return {"key": "seasonal_alignment", "score": 0.5, "comment": "기온 데이터 없음 — 중립"}
+
+    avg_t   = sum(temps) / len(temps)
+    is_hot  = avg_t >= _HOT_THRESHOLD
+    is_cold = avg_t <= _COLD_THRESHOLD
+
+    violations: list[str] = []
+    for r in recs:
+        title = r.get("title", "")
+        if is_cold:
+            for app in _COOLING_APPLIANCES:
+                if app in title:
+                    violations.append(f"한랭({avg_t:.1f}°C)인데 냉방 기기 권고: {title}")
+        if is_hot:
+            for app in _HEATING_APPLIANCES:
+                if app in title:
+                    violations.append(f"온난({avg_t:.1f}°C)인데 난방 기기 권고: {title}")
+
+    ok = len(violations) == 0
+    return {"key": "seasonal_alignment", "score": int(ok),
+            "comment": f"평균 {avg_t:.1f}°C; " + ("; ".join(violations) if violations else "전체 통과")}
+
+
+def anomaly_coverage(outputs: dict, **kwargs) -> dict:
+    """이상 이벤트 건수 대비 진단 커버리지 (0.0~1.0)."""
+    nilm    = outputs.get("_nilm_output", {})
+    events  = nilm.get("anomaly_events", [])
+    diags   = outputs.get("anomaly_diagnoses", [])
+
+    n_events = len(events)
+    n_diags  = len(diags)
+
+    if n_events == 0:
+        return {"key": "anomaly_coverage", "score": 1.0, "comment": "이상 이벤트 없음"}
+
+    score = round(min(n_diags, n_events) / n_events, 2)
+    return {"key": "anomaly_coverage", "score": score,
+            "comment": f"이벤트 {n_events}건 / 진단 {n_diags}건"}
+
+
+_LATENCY_BUDGET_MS = 30_000   # 30초 SLA
+
+
+def latency(outputs: dict, **kwargs) -> dict:
+    """그래프 실행 지연 시간 (ms). 예산 30초 이하 = 1, 초과 = 0."""
+    ms = outputs.get("_latency_ms")
+    if ms is None:
+        return {"key": "latency", "score": 0.5, "comment": "측정값 없음"}
+    ok = ms <= _LATENCY_BUDGET_MS
+    return {"key": "latency", "score": int(ok),
+            "comment": f"{ms:,}ms ({'통과' if ok else f'예산 {_LATENCY_BUDGET_MS:,}ms 초과'})"}
+
+
+_GPT4O_MINI_INPUT_USD_PER_TOK  = 0.15 / 1_000_000
+_GPT4O_MINI_OUTPUT_USD_PER_TOK = 0.60 / 1_000_000
+_USD_TO_KRW = 1_350
+
+
+def cost_estimate(outputs: dict, **kwargs) -> dict:
+    """가구당 LLM 실행 비용 추정 (원). token_count 있으면 실측, 없으면 자 기반 rough 추정."""
+    token_count = outputs.get("_token_count")
+    cost_usd    = outputs.get("_cost_usd")
+
+    if cost_usd is not None:
+        cost_krw = int(cost_usd * _USD_TO_KRW)
+        return {"key": "cost_estimate", "score": cost_krw,
+                "comment": f"실측 {token_count:,}tok → {cost_usd*100:.3f}¢ → {cost_krw}원"}
+
+    # fallback: 출력 문자 수 × 2 ≈ 토큰 (한국어), 입력:출력 ≈ 3:1 가정
+    clean = {k: v for k, v in outputs.items() if not k.startswith("_")}
+    out_tok = len(str(clean)) * 2
+    in_tok  = out_tok * 3
+    cost_usd_est = in_tok * _GPT4O_MINI_INPUT_USD_PER_TOK + out_tok * _GPT4O_MINI_OUTPUT_USD_PER_TOK
+    cost_krw = int(cost_usd_est * _USD_TO_KRW)
+    return {"key": "cost_estimate", "score": cost_krw,
+            "comment": f"추정 {in_tok + out_tok:,}tok → {cost_usd_est*100:.3f}¢ → {cost_krw}원"}
+
+
 # ── 실행 ──────────────────────────────────────────────────────────────────────
 
 _EVALUATORS = [
@@ -335,9 +494,14 @@ _EVALUATORS = [
     field_length,
     safety,
     cashback_compliance,
+    rec_uniqueness,
+    seasonal_alignment,
+    anomaly_coverage,
     rec_relevance,
     rag_faithfulness,
     llm_quality,
+    latency,
+    cost_estimate,
 ]
 
 
