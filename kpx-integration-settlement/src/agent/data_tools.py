@@ -506,6 +506,8 @@ def _build_synthetic_households(start: int = 4, end: int = 50) -> None:
         {"name": "김치냉장고", "estimated_w": 160,  "eff": (1, 3)},
         {"name": "선풍기",     "estimated_w": 50,   "eff": None},
     ]
+    # TV와 컴퓨터는 동일한 "절전 모드·타이머" 권고를 받으므로 한 가구에 동시 존재 금지
+    _EXCLUSIVE_GROUPS = [{"TV", "컴퓨터"}]
     _HOUSE_TYPES = ["아파트", "빌라", "단독주택", "오피스텔"]
     _AREAS       = [33, 40, 52, 59, 66, 75, 84, 99, 115, 132]
     _TYPES_ANOM  = [
@@ -519,10 +521,16 @@ def _build_synthetic_households(start: int = 4, end: int = 50) -> None:
         rng = random.Random(n * 137)
 
         # ── 프로필 ──────────────────────────────────────────────────────
-        n_app = rng.randint(3, 6)
+        n_app = rng.randint(4, 6)  # 최소 4개 → 권고 다양성 확보
         pool  = rng.sample(_APPLIANCE_POOL, n_app)
         if not any(a["name"] == "냉장고" for a in pool):
             pool[0] = next(a for a in _APPLIANCE_POOL if a["name"] == "냉장고")
+        # 동일 권고 그룹(TV·컴퓨터)은 최대 1개만 유지
+        for group in _EXCLUSIVE_GROUPS:
+            members_in_pool = [a for a in pool if a["name"] in group]
+            if len(members_in_pool) > 1:
+                for dup in members_in_pool[1:]:
+                    pool.remove(dup)
         appliances = [
             {
                 "name": a["name"],
@@ -652,6 +660,9 @@ def _build_synthetic_households(start: int = 4, end: int = 50) -> None:
             conf      = round(rng.uniform(0.60, 0.95), 2)
             ts        = f"2026-04-{rng.randint(10,29):02d}T{rng.randint(0,23):02d}:{rng.randint(0,59):02d}:00+09:00"
             status    = rng.choice(["active", "resolved"])
+            # before/after kW: after = before × (1 + pct/100) → 항상 after > before
+            before_kw = round(rng.uniform(0.8, 2.0), 1)
+            after_kw  = round(before_kw * (1 + pct / 100), 1)
             event = {
                 "event_id":     f"ANO-{hh}-001",
                 "appliance":    top_app,
@@ -659,6 +670,8 @@ def _build_synthetic_households(start: int = 4, end: int = 50) -> None:
                 "type":         anom_type,
                 "detected_at":  ts,
                 "description":  anom_desc,
+                "before_kw":    before_kw,
+                "after_kw":     after_kw,
                 "confidence":   conf,
                 "model_version": "nilm-v2.1",
                 "status":       status,
