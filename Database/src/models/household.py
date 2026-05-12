@@ -50,11 +50,18 @@ class Household(Base):
         ForeignKey("aggregators.aggregator_id", ondelete="SET NULL")
     )
 
+    # migration 14 추가 컬럼 — KEPCO 검침일 (캐시백 기준선 산정 기간 결정)
+    billing_day: Mapped[int | None] = mapped_column(SmallInteger)
+
     __table_args__ = (
         CheckConstraint(r"household_id ~ '^H[0-9]{3}$'"),
         CheckConstraint(
             "cluster_label IS NULL OR cluster_label BETWEEN 0 AND 8",
             name="chk_households_cluster_label",
+        ),
+        CheckConstraint(
+            "billing_day IS NULL OR billing_day BETWEEN 1 AND 28",
+            name="chk_households_billing_day",
         ),
     )
 

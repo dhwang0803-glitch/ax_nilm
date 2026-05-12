@@ -85,7 +85,7 @@ ingestion_log                  — 파일 적재 이력
 
 루트 `CLAUDE.md` 보안 규칙의 "개인정보 AES-256 암호화"를 구현 가능한 경계로 만들기 위해 가구 테이블을 **평문 분류값**과 **암호화 PII** 둘로 분리:
 
-- `households` — `house_type`, `residential_type`, `residential_area`: 집계 분석에 필요, 저민감 준식별자
+- `households` — `house_type`, `residential_type`, `residential_area`, `billing_day`: 집계 분석에 필요, 저민감 준식별자
 - `household_pii` — `address_enc`, `members_enc`, `income_dual`: 직접 식별 가능, 분석에 불필요
 
 `household_pii` 직접 조회 권한은 최소 역할(감사/민원 대응)에만 부여. 분석 역할은 `households`만 접근.
@@ -117,6 +117,22 @@ JSON meta 중 `weather, temperature, windchill(실제는 풍속), humidity` 는 
 |------|----------|---------|
 | `meta.windchill` | 평균풍속 (avgWs) | `household_daily_env.wind_speed_ms` |
 | `meta.income` | 맞벌이 여부 | `household_pii.income_dual` |
+
+### 2.5 `billing_day` — KEPCO 검침일 기반 캐시백 산정 기간
+
+KEPCO 에너지캐시백의 "동월" 비교 기간은 **달력 월이 아닌 검침일 기준 사이클**로 정의된다.
+
+> 예) 검침일 15일인 가구의 "10월분" = 9월 15일 ~ 10월 14일
+
+`monthly_baselines`의 기준선 산정과 절감률 계산 모두 이 사이클을 따라야 하므로,
+가구별 검침일을 `households.billing_day`(SMALLINT, 1~28)로 저장한다.
+
+| 값 | 의미 |
+|----|------|
+| 1~28 | KEPCO 검침일 (해당 일 포함 → 익월 전일 마감) |
+| NULL | 검침일 미확인 → 달력 월(1일~말일) 기준 fallback |
+
+29~31일은 월마다 존재하지 않아 CONSTRAINT에서 제외 (`CHECK billing_day BETWEEN 1 AND 28`).
 
 ## 3. 시계열 설계 — `power_1min`
 
