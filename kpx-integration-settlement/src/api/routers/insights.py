@@ -1,6 +1,5 @@
 import datetime
 import logging
-import os
 import time
 from collections import defaultdict
 
@@ -9,7 +8,8 @@ from fastapi import APIRouter
 logger = logging.getLogger(__name__)
 
 from src.agent.data_tools import get_anomaly_events, get_anomaly_log
-from src.agent.graph import InsightsLLMOutput, cashback_unit_rate, run_insights
+from src.agent.graph import InsightsLLMOutput, run_insights
+from src.agent.multi_agent.cashback_node import cashback_unit_rate
 from src.agent.multi_agent import run_multi_agent
 
 router = APIRouter()
