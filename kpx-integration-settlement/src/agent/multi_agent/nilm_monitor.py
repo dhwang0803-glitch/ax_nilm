@@ -10,7 +10,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..data_tools import (
     get_anomaly_events,
@@ -22,15 +22,17 @@ from ..data_tools import (
 # ── 출력 스키마 ────────────────────────────────────────────────────────────────
 
 class TopConsumer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     appliance: str
     daily_kwh: float
     share_pct: float = Field(ge=0.0, le=100.0)
 
 
-class NilmMonitorOutput(BaseModel):
-    anomaly_events: list[dict]      # get_anomaly_events raw
-    top_consumers: list[TopConsumer]  # 소비 상위 가전 (daily_kwh 내림차순)
-    peak_hours: list[int]           # 소비 피크 시간대 (0~23)
+class _NilmLLMOutput(BaseModel):
+    """LLM 구조화 출력 전용 — anomaly_events는 코드에서 직접 주입."""
+    model_config = ConfigDict(extra="forbid")
+    top_consumers: list[TopConsumer]
+    peak_hours: list[int]
 
 
 # ── 시스템 프롬프트 ─────────────────────────────────────────────────────────────
@@ -42,7 +44,6 @@ _SYSTEM = """\
 top_consumers: daily_summary에서 daily_kwh 상위 5개 이하 추출.
   - daily_kwh 0.0이면 제외.
 peak_hours: hourly_data에서 kwh 상위 3개 시간대의 hour 값 (정수 리스트).
-anomaly_events: 입력의 events 배열 그대로 전달 (빈 배열이면 []).
 """
 
 
@@ -67,13 +68,15 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     }
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    result: NilmMonitorOutput = (
+    result: _NilmLLMOutput = (
         llm
-        .with_structured_output(NilmMonitorOutput)
+        .with_structured_output(_NilmLLMOutput)
         .invoke([
             SystemMessage(_SYSTEM),
             HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
         ])
     )
 
-    return {"nilm_output": result.model_dump()}
+    output = result.model_dump()
+    output["anomaly_events"] = raw_events  # raw 이벤트 직접 주입
+    return {"nilm_output": output}
