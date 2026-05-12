@@ -2,9 +2,9 @@
 
 흐름:
   START
-    ├→ nilm_monitor (Module 2)  ─→ report (Module 5) → END
+    ├→ nilm_monitor (Module 2)  ─→ rag_retriever (Module 4) → report (Module 5) → END
     └→ cashback (Module 3)      ─↗
-Module 2·3은 병렬 실행, 둘 다 완료 후 Module 5 실행.
+Module 2·3은 병렬 실행, 둘 다 완료 후 RAG 검색 → Module 5 실행.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from typing_extensions import TypedDict
 from ..schemas import InsightsLLMOutput
 from .cashback_node import cashback_node_fn, cashback_unit_rate
 from .nilm_monitor import nilm_monitor_node
+from .rag_node import rag_node
 from .report_agent import report_node
 
 
@@ -26,6 +27,7 @@ class MultiAgentState(TypedDict):
     household_id: str
     nilm_output: dict        # NilmMonitorOutput.model_dump()
     cashback_output: dict    # CashbackNodeOutput.model_dump()
+    rag_context: list        # retrieve() 결과 청크 문자열 리스트
     final_output: dict       # InsightsLLMOutput.model_dump()
 
 
@@ -38,17 +40,19 @@ def _get_graph():
     if not _graph:
         builder = StateGraph(MultiAgentState)
 
-        builder.add_node("nilm_monitor", nilm_monitor_node)
-        builder.add_node("cashback",     cashback_node_fn)
-        builder.add_node("report",       report_node)
+        builder.add_node("nilm_monitor",   nilm_monitor_node)
+        builder.add_node("cashback",       cashback_node_fn)
+        builder.add_node("rag_retriever",  rag_node)
+        builder.add_node("report",         report_node)
 
         # Module 2·3 병렬 실행 (START에서 동시 fan-out)
         builder.add_edge(START, "nilm_monitor")
         builder.add_edge(START, "cashback")
 
-        # 두 노드 모두 완료 후 report 실행 (fan-in)
-        builder.add_edge("nilm_monitor", "report")
-        builder.add_edge("cashback",     "report")
+        # 두 노드 완료 후 RAG 검색 (fan-in), 이후 report
+        builder.add_edge("nilm_monitor", "rag_retriever")
+        builder.add_edge("cashback",     "rag_retriever")
+        builder.add_edge("rag_retriever", "report")
 
         builder.add_edge("report", END)
 
@@ -68,10 +72,11 @@ def run_multi_agent(household_id: str) -> InsightsLLMOutput:
 
     result: dict[str, Any] = _get_graph().invoke(
         {
-            "household_id":   household_id,
-            "nilm_output":    {},
+            "household_id":    household_id,
+            "nilm_output":     {},
             "cashback_output": {},
-            "final_output":   {},
+            "rag_context":     [],
+            "final_output":    {},
         }
     )
 

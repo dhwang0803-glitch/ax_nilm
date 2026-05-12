@@ -189,6 +189,9 @@ def upsert_chunks(conn, chunks: list[dict]) -> int:
 # ─── 진입점 ──────────────────────────────────────────────────────────────────
 
 def main():
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parents[1] / "config" / ".env")
+
     parser = argparse.ArgumentParser(description="RAG 문서 임베딩 파이프라인")
     parser.add_argument("--dry-run", action="store_true", help="청크 목록 출력만, DB 저장 안 함")
     parser.add_argument("--doc", help="단일 문서 doc_id만 처리 (예: policy_cashback_tiers)")
