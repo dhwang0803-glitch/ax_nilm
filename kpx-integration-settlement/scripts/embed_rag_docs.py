@@ -211,7 +211,10 @@ def main():
     if args.dry_run:
         for c in all_chunks:
             tok_count = len(tiktoken.get_encoding("cl100k_base").encode(c["content"]))
-            print(f"  [{c['doc_id']}#{c['chunk_index']}] {tok_count}토큰 | {c['content'][:60].replace(chr(10), ' ')}...")
+            preview = c['content'][:60].replace(chr(10), ' ')
+            enc = sys.stdout.encoding or 'utf-8'
+            safe = preview.encode(enc, errors='replace').decode(enc)
+            print(f"  [{c['doc_id']}#{c['chunk_index']}] {tok_count}토큰 | {safe}...")
         return
 
     if "OPENAI_API_KEY" not in os.environ:
