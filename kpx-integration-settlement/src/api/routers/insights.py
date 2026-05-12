@@ -1,6 +1,5 @@
 import datetime
 import logging
-import os
 import time
 from collections import defaultdict
 
@@ -9,7 +8,9 @@ from fastapi import APIRouter
 logger = logging.getLogger(__name__)
 
 from src.agent.data_tools import get_anomaly_events, get_anomaly_log
-from src.agent.graph import InsightsLLMOutput, run_graph, run_insights
+from src.agent.graph import InsightsLLMOutput, run_insights
+from src.agent.multi_agent.cashback_node import cashback_unit_rate
+from src.agent.multi_agent import run_multi_agent
 
 router = APIRouter()
 
@@ -30,26 +31,24 @@ def _set_cache(hh: str, result: InsightsLLMOutput) -> None:
     _cache[hh] = (time.time(), result)
 
 
-_INSIGHTS_PROMPT = "이상 탐지 이벤트를 진단하고 절약 추천을 JSON으로 생성해줘"
-
 
 def get_or_run_insights(hh: str) -> InsightsLLMOutput:
-    """캐시에서 읽거나 없으면 에이전트 호출 후 저장.
+    """캐시에서 읽거나 없으면 멀티에이전트 호출 후 저장.
 
-    supervisor → anomaly 에이전트 → get_anomaly_events / get_anomaly_log 도구 호출
-    → InsightsLLMOutput 파싱. 파싱 실패 시 run_insights() 직접 호출로 폴백.
+    run_multi_agent → Module 2·3 병렬 → Module 5 → InsightsLLMOutput.
+    실패 시 run_insights() 단일 에이전트로 폴백.
+    savings_krw는 supervisor 내부에서 이미 처리됨.
     """
     cached = _get_cached(hh)
     if cached is None:
-        result = run_graph(
-            household_id=hh,
-            user_message=_INSIGHTS_PROMPT,
-        )
         try:
-            cached = InsightsLLMOutput(**result["answer"])
+            cached = run_multi_agent(hh)
         except Exception as e:
-            logger.warning("[InsightsLLMOutput 파싱 실패] hh=%s answer=%s error=%s", hh, result["answer"], e)
+            logger.warning("[multi_agent 실패] hh=%s error=%s — 단일 에이전트 폴백", hh, e)
             cached = run_insights(hh)
+            unit_rate = cashback_unit_rate(hh)
+            for rec in cached.recommendations:
+                rec.savings_krw = round(rec.savings_kwh * unit_rate)
         _set_cache(hh, cached)
     return cached
 
