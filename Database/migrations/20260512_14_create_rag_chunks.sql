@@ -32,5 +32,6 @@ CREATE INDEX IF NOT EXISTS idx_rag_chunks_category
 
 -- ax_nilm_team 앱 계정에 읽기/쓰기 권한 부여 (embed 파이프라인 UPSERT용)
 GRANT SELECT, INSERT, UPDATE ON rag_chunks TO ax_nilm_team;
+GRANT USAGE, SELECT ON SEQUENCE rag_chunks_id_seq TO ax_nilm_team;
 
 COMMIT;
