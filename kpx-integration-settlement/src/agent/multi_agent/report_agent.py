@@ -6,6 +6,7 @@ Module 2(NILM 모니터링) + Module 3(캐시백 계산) 결과를 받아
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -58,7 +59,9 @@ def report_node(state: dict[str, Any]) -> dict[str, Any]:
     cashback_output = state.get("cashback_output") or {}
     rag_chunks      = state.get("rag_context") or []
 
-    weather_data = get_weather(hh)
+    today = date.today()
+    date_range = [(today - timedelta(days=7)).isoformat(), today.isoformat()]
+    weather_data = get_weather(date_range)
 
     payload = {
         "nilm":        nilm_output,
