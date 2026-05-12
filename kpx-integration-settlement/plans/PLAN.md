@@ -179,10 +179,21 @@ kpx-integration-settlement/
 ├── plans/
 │   ├── PLAN.md
 │   └── project_and_work_summary.md
+├── rag_docs/
+│   └── raw/                      ← Module 4 지식베이스 원문 (수동 작성)
+│       ├── guide_cashback_enrollment.md
+│       ├── guide_baseline_explained.md
+│       ├── tips_appliance_patterns.md
+│       ├── tips_peak_hours.md
+│       ├── policy_cashback_tiers.md
+│       ├── policy_progressive_rate.md
+│       └── policy_measurement_period.md
 ├── src/
 │   ├── agent/
 │   │   ├── graph.py              ← 단일 ReAct 에이전트 (하위 호환 유지)
 │   │   ├── data_tools.py         ← 10개 데이터 조회 도구 (모든 에이전트 공유)
+│   │   ├── schemas.py            ← 공유 Pydantic 스키마
+│   │   ├── rag_retriever.py      ← Module 4: pgvector 검색 (retrieve / retrieve_with_scores)
 │   │   ├── anonymizer.py         ← PII 스크럽 (도구 출력 레벨)
 │   │   ├── validator.py          ← LLM 출력 검증
 │   │   ├── trace_logger.py       ← 로컬 트레이스 저장
@@ -200,13 +211,12 @@ kpx-integration-settlement/
 │   │       ├── settings.py       ← GET /api/settings/account
 │   │       ├── cashback.py       ← GET /api/cashback/tracker
 │   │       └── insights.py       ← GET /api/insights/summary (에이전트 연동)
-│   └── settlement/
-│       ├── cbl.py                ← 기준선 계산 (2개년 동월 평균)
-│       ├── calculator.py         ← 캐시백 산정 (절감률 → 단가 → 금액)
-│       └── appliance.py          ← 가전별 절감 기여 분석
 ├── scripts/
+│   ├── create_rag_table.sql      ← rag_chunks 테이블 + IVFFLAT 인덱스 DDL
+│   ├── embed_rag_docs.py         ← RAG 문서 임베딩 파이프라인 (512토큰/50 overlap)
 │   └── seed_anomaly.sql          ← appliance_status_intervals 목업 시드
 ├── tests/
+│   ├── test_rag_retriever.py     ← Module 4 단위 테스트 (11개, mock-only)
 │   └── run_target_households.py  ← 9가구 통합 검증 (LangSmith 트레이싱)
 ├── config/
 │   └── .env.example

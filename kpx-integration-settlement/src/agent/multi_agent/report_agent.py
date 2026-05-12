@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from ..data_tools import get_weather
+from ..rag_retriever import retrieve
 from ..schemas import InsightsLLMOutput
 
 
@@ -59,10 +60,15 @@ def report_node(state: dict[str, Any]) -> dict[str, Any]:
 
     weather_data = get_weather(hh)
 
+    savings_rate = (cashback_output or {}).get("savings_rate", 0)
+    rag_query = f"에너지캐시백 절감률 {savings_rate:.0%} 절감 권고"
+    rag_chunks = retrieve(rag_query, k=3)  # [] if DB/API key unavailable
+
     payload = {
-        "nilm":     nilm_output,
-        "cashback": cashback_output,
-        "weather":  weather_data.get("raw", {}),
+        "nilm":        nilm_output,
+        "cashback":    cashback_output,
+        "weather":     weather_data.get("raw", {}),
+        "rag_context": rag_chunks,
     }
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
