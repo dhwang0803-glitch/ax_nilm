@@ -201,52 +201,42 @@ _CASHBACK_TIERS: list[tuple[float, float]] = [
 
 
 def cashback_compliance(outputs: dict, **kwargs) -> dict:
-    """캐시백 계산이 단계 요율표·가입 조건(3%)을 준수하는지 검증."""
+    """캐시백 계산이 단계 요율표를 준수하는지 검증.
+
+    enrolled는 프로그램 가입 여부(DB 값)이며 savings_rate와 독립적.
+    검증 대상: cashback_rate_krw_per_kwh 요율 일치 + projected_cashback_krw 정산액 정합성.
+    """
     cb = outputs.get("_cashback_output", {})
     if not cb:
         return {"key": "cashback_compliance", "score": 0,
                 "comment": "_cashback_output 없음"}
 
     violations = []
-    savings_rate       = cb.get("savings_rate", 0.0)
-    enrolled           = cb.get("enrolled", False)
-    rate_per_kwh       = cb.get("cashback_rate_krw_per_kwh", 0.0)
-    projected_krw      = cb.get("projected_cashback_krw", 0)
-    baseline_kwh       = cb.get("baseline_kwh", 0.0)
+    savings_rate  = cb.get("savings_rate", 0.0)
+    rate_per_kwh  = cb.get("cashback_rate_krw_per_kwh", 0.0)
+    projected_krw = cb.get("projected_cashback_krw", 0)
+    baseline_kwh  = cb.get("baseline_kwh", 0.0)
 
-    # 가입 조건: savings_rate ≥ 3%
-    should_enroll = savings_rate >= 0.03
-    if enrolled != should_enroll:
+    # 단계 요율 확인
+    expected_rate = 0.0
+    for threshold, rate in _CASHBACK_TIERS:
+        if savings_rate >= threshold:
+            expected_rate = rate
+            break
+
+    if abs(rate_per_kwh - expected_rate) > 0.01:
         violations.append(
-            f"enrolled 불일치: savings_rate={savings_rate:.1%}, enrolled={enrolled}"
+            f"요율 불일치: savings_rate={savings_rate:.1%}, "
+            f"expected={expected_rate}원/kWh, actual={rate_per_kwh}원/kWh"
         )
 
-    if should_enroll:
-        # 단계 요율 확인
-        expected_rate = 0.0
-        for threshold, rate in _CASHBACK_TIERS:
-            if savings_rate >= threshold:
-                expected_rate = rate
-                break
-        if abs(rate_per_kwh - expected_rate) > 0.01:
-            violations.append(
-                f"요율 불일치: savings_rate={savings_rate:.1%}, "
-                f"expected={expected_rate}원/kWh, actual={rate_per_kwh}원/kWh"
-            )
-
-        # 정산액 확인 (effective_savings = baseline * min(rate, 30%), int 절사)
-        effective = baseline_kwh * min(savings_rate, 0.30)
-        expected_krw = int(effective * expected_rate)
-        if projected_krw != expected_krw:
-            violations.append(
-                f"정산액 불일치: expected={expected_krw}원, actual={projected_krw}원"
-            )
-    else:
-        # 미가입 → 정산 0
-        if projected_krw != 0:
-            violations.append(
-                f"미가입인데 projected_cashback_krw={projected_krw}원"
-            )
+    # 정산액 확인 (effective_savings = baseline * min(savings_rate, 30%), int 절사)
+    effective    = baseline_kwh * min(savings_rate, 0.30)
+    expected_krw = int(effective * expected_rate)
+    if projected_krw != expected_krw:
+        violations.append(
+            f"정산액 불일치: expected={expected_krw}원, actual={projected_krw}원"
+        )
 
     ok = len(violations) == 0
     return {"key": "cashback_compliance", "score": int(ok),
