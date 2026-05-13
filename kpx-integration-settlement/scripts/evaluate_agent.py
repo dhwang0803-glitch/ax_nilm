@@ -309,8 +309,14 @@ def _call_judge(prompt: str) -> tuple[float, str]:
         max_tokens=100,
     )
     text = resp.choices[0].message.content or ""
-    match = re.search(r"점수\s*:\s*([1-5])", text)
-    score = int(match.group(1)) / 5.0 if match else 0.5
+    # 전각 콜론(：)·반각(:), 한국어·영어 레이블, 소수점 형식 모두 허용
+    match = re.search(r"(?:점수|Score)\s*[:：]\s*([1-5])(?:\.\d)?", text, re.IGNORECASE)
+    if match:
+        score = int(match.group(1)) / 5.0
+    else:
+        # fallback: 응답 첫 30자에서 숫자 탐지 (오탐 방지)
+        fb = re.search(r"(?<!\d)([1-5])(?!\d)", text[:30])
+        score = int(fb.group(1)) / 5.0 if fb else 0.5
     return score, text.strip()
 
 
@@ -387,10 +393,16 @@ _COOLING_APPLIANCES = ["에어컨", "선풍기"]
 _HEATING_APPLIANCES = ["전기장판", "온수매트", "전열기", "히터", "전기히터"]
 _HOT_THRESHOLD  = 23.0   # °C 이상 → 여름
 _COLD_THRESHOLD = 12.0   # °C 이하 → 겨울
+# 효율 조정 방향 키워드 — 사용 증가가 아닌 절감 권고이므로 계절 위반 아님
+_EFFICIENCY_KEYWORDS = ["낮추기", "줄이기", "절전", "조정", "타이머", "설정", "최적화", "점검", "단계", "예약", "모아서"]
 
 
 def seasonal_alignment(outputs: dict, **kwargs) -> dict:
-    """기온 기준 냉·난방 가전 권고 방향 일치 확인."""
+    """기온 기준 냉·난방 가전 권고 방향 일치 확인.
+
+    효율 조정 권고(낮추기·조정 등)는 계절 무관하게 허용.
+    사용 증가·난방 강화 방향 표현이 있을 때만 위반으로 판정.
+    """
     weather = outputs.get("_weather", [])
     recs    = outputs.get("recommendations", [])
 
@@ -406,6 +418,9 @@ def seasonal_alignment(outputs: dict, **kwargs) -> dict:
     violations: list[str] = []
     for r in recs:
         title = r.get("title", "")
+        # 효율 조정 방향 키워드가 있으면 계절 체크 제외 (냉난방 조정이지 사용 촉진 아님)
+        if any(kw in title for kw in _EFFICIENCY_KEYWORDS):
+            continue
         if is_cold:
             for app in _COOLING_APPLIANCES:
                 if app in title:
