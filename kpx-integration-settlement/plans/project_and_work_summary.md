@@ -1,6 +1,6 @@
 # ax_nilm 프로젝트 개요 및 내 파트 작업 정리
 
-> 작성일: 2026-05-08 | 담당: juyeon | 브랜치: Frontend
+> 최초 작성: 2026-05-08 | 최종 갱신: 2026-05-13 | 담당: juyeon | 브랜치: Frontend
 
 ---
 
@@ -46,25 +46,38 @@
 kpx-integration-settlement/
 ├── src/
 │   ├── agent/
-│   │   ├── graph.py          ← LangGraph ReAct 에이전트 + Insights 스키마
-│   │   ├── data_tools.py     ← 10개 데이터 조회 도구 (실DB + mock fallback)
-│   │   ├── anonymizer.py     ← PII 스크럽 (도구 출력 레벨)
-│   │   ├── validator.py      ← LLM 출력 검증
-│   │   └── trace_logger.py   ← 로컬 트레이스 저장
+│   │   ├── data_tools.py          ← 10개 데이터 조회 도구 (실DB + mock fallback)
+│   │   ├── schemas.py             ← InsightsLLMOutput Pydantic 스키마
+│   │   ├── coach.py               ← 단일 ReAct 코치 에이전트 (legacy fallback)
+│   │   ├── rag_retriever.py       ← Module 4: pgvector 유사도 검색 (DB 없으면 [] 폴백)
+│   │   └── multi_agent/
+│   │       ├── supervisor.py      ← LangGraph StateGraph + run_multi_agent() 진입점
+│   │       ├── nilm_monitor.py    ← Module 2: 이상이벤트·가전소비 구조화 (LLM)
+│   │       ├── cashback_node.py   ← Module 3: 기준선·절감률·예상캐시백 산정 (순수 계산)
+│   │       ├── rag_node.py        ← Module 4: retrieve() 호출 래퍼 노드
+│   │       └── report_agent.py    ← Module 5: 이상 진단 + 절감 권고 생성 (structured LLM)
 │   ├── api/
 │   │   └── routers/
-│   │       ├── dashboard.py  ← GET /api/dashboard/summary
-│   │       ├── usage.py      ← GET /api/usage/analysis
-│   │       ├── auth.py       ← 인증
-│   │       ├── settings.py   ← GET /api/settings/account
-│   │       ├── cashback.py   ← GET /api/cashback/tracker
-│   │       └── insights.py   ← GET /api/insights/summary (에이전트 연동)
-│   └── settlement/
-│       └── calculator.py     ← KEPCO 에너지캐시백 단가 계산
+│   │       ├── dashboard.py       ← GET /api/dashboard/summary
+│   │       ├── usage.py           ← GET /api/usage/analysis
+│   │       ├── auth.py            ← 인증
+│   │       ├── settings.py        ← GET /api/settings/account
+│   │       ├── cashback.py        ← GET /api/cashback/tracker
+│   │       └── insights.py        ← GET /api/insights/summary (멀티에이전트 우선, 단일 폴백)
+│   └── tasks/
+│       └── celery_tasks.py        ← Celery 배치 태스크 3개
 ├── scripts/
-│   └── seed_anomaly.sql      ← appliance_status_intervals 목업 시드
+│   ├── seed_anomaly.sql           ← appliance_status_intervals 목업 시드
+│   ├── create_rag_table.sql       ← rag_chunks 테이블 + IVFFLAT cosine 인덱스
+│   ├── embed_rag_docs.py          ← 문서 → 512토큰 청크 → OpenAI 임베딩 → UPSERT
+│   └── evaluate_agent.py          ← LangSmith 평가 스크립트 (14개 평가자)
+├── docs/
+│   └── rag/                       ← 에너지캐시백 지식베이스 문서 7개 (RAG 소스)
+├── agents/
+│   └── ORCHESTRATOR.md 등 역할 문서 9개
 └── tests/
-    └── run_target_households.py ← 9가구 통합 검증
+    ├── run_target_households.py   ← 9가구 통합 검증
+    └── test_rag_retriever.py      ← RAG 단위 테스트 11개 (mock-only)
 ```
 
 ---
@@ -203,6 +216,125 @@ kpx-integration-settlement/
 
 ---
 
+### Phase 8 — 멀티에이전트 재도입 (수퍼바이저 패턴)
+
+> 2026-05-11 ~ 2026-05-12
+
+**`d46e937` docs(plan): PLAN.md DR·RAG 잔재 제거 + 현재 구현 기준 갱신**
+
+**`9d845df` fix(agent): 시간대 이동 권고 제거 + 프로젝트 요약 문서 추가**
+- 시간대 이동 권고(세탁기·건조기 등)를 시스템 프롬프트에서 제거
+  - 이유: 시간대 이동은 총 kWh 절감 없음 → 에너지캐시백 기여 없음
+
+**`dbac304` feat(agent): 수퍼바이저 패턴 멀티에이전트 구현**
+- LangGraph `StateGraph` 기반 4-노드 파이프라인:
+  - `START` → `nilm_monitor` ‖ `cashback` (병렬) → `rag_retriever` → `report` → `END`
+- **Module 2** `nilm_monitor.py`: 이상 이벤트 수집 + 가전 소비 패턴 → `_NilmLLMOutput` 구조화
+- **Module 3** `cashback_node.py`: 순수 계산 노드 (LLM 없음)
+  - `baseline_kwh`, `savings_rate`, `cashback_rate_krw_per_kwh`, `projected_cashback_krw` 산출
+  - 단가표: 3%→30원, 5%→60원, 10%→80원, 20%→100원/kWh
+- **Module 5** `report_agent.py`: NILM + 캐시백 + 날씨 통합 → `InsightsLLMOutput` (structured output)
+- `insights.py` 라우터: `run_multi_agent` 우선 호출, 실패 시 단일 에이전트 폴백 유지
+- 이유: Module 2·3 독립 실행 가능 → 병렬화로 레이턴시 단축, LLM 호출은 Module 5만 담당
+
+**`d551168` fix(settlement): 캐시백 단가 정정 (30/60/80/100원/kWh)**
+- 기존 단가표(30·50·70·100원) → 공식 KEPCO 요율(30·60·80·100원)로 수정
+
+**`d15878d` feat(tasks): Celery 배치 태스크 3개 구현**
+- `refresh_all_baselines`: 전 가구 2개년 동월 평균 기준선 계산 → `monthly_baselines` upsert
+  - `billing_day` 기반 검침 사이클, proxy_cluster fallback 지원
+- `finalize_cashback_results`: 실측 기반 KEPCO 에너지캐시백 산정 → `cashback_results` upsert
+- `refresh_household_baseline`: 신규 가입/수동 트리거용 단일 가구 즉시 갱신
+- 22개 단위 테스트 PASS (billing_period 경계, tier_rate 전 구간, mock DB upsert)
+
+---
+
+### Phase 9 — RAG 모듈 (Module 4) 구현
+
+> 2026-05-12
+
+**`1f31285` docs(rag): 에너지캐시백 지식베이스 문서 7개 작성**
+- `docs/rag/` 에 에너지캐시백 관련 한국어 문서 7개 작성 (RAG 소스 원문)
+
+**`2be8b54` feat(rag): Module 4 pgvector 임베딩 파이프라인 + 검색 모듈 구현**
+- `scripts/create_rag_table.sql`: `rag_chunks` 테이블 + IVFFLAT cosine 인덱스 (lists=10)
+- `scripts/embed_rag_docs.py`: H2 섹션 분리 → 512토큰 청크 → OpenAI `text-embedding-3-small` → UPSERT
+- `src/agent/rag_retriever.py`: `retrieve()` / `retrieve_with_scores()` — DB 미연결 시 `[]` 폴백
+
+**`0b49a4e` feat(rag): Module 4 RAG report_agent 통합 + 평가 스크립트 멀티에이전트 전환**
+- `rag_node.py` 추가: `retrieve()` 호출 래퍼 → `rag_context` 상태 업데이트
+- `report_agent.py`: `rag_context` 청크를 LLM 페이로드에 주입
+- `run_target_households.py`: `run_graph` → `run_multi_agent` 전환
+- `test_rag_retriever.py`: RAG 단위 테스트 11개 (mock-only, DB/API 키 불필요)
+
+**`24c2575` feat(agent): RAG 검색을 별도 그래프 노드로 분리 (Module 4)**
+- `supervisor.py`에서 RAG 호출을 `rag_retriever` 노드로 분리 (fan-in 전 단계)
+- 이유: `nilm_monitor`·`cashback` 완료 후 RAG 쿼리를 구성해야 컨텍스트 품질이 높음
+
+**`1e5b2b7` fix(report_agent): get_weather 호출 인자를 날짜 범위 리스트로 수정**
+- `get_weather(date_range)` 인자를 `[start_date, end_date]` 리스트 형태로 수정
+  - 이유: `data_tools.py` 시그니처와 불일치로 런타임 오류 발생
+
+---
+
+### Phase 10 — LangSmith 평가 시스템 구축
+
+> 2026-05-12 ~ 2026-05-13
+
+**`482f0e5` refactor(agent): settlement 모듈 제거 및 multi_agent 리팩터링**
+- `settlement/calculator.py` 제거 → `cashback_node.py`로 통합
+
+**`360f772` feat(eval): LangSmith 평가 가구 3개 → 50개로 확장**
+- `evaluate_agent.py` 데이터셋을 HH001~HH003(mock) 3가구에서 50가구로 확장
+- LangSmith 데이터셋 자동 생성 로직 포함
+
+**`b57a145` fix(eval): llm_quality 0.6 원인 제거 — mock 데이터 품질 개선**
+- HH001~HH003 mock 데이터의 이상 이벤트·가전 구성 보강
+  - 이유: mock 데이터가 빈 이벤트/0.0 kWh 가전으로 채워져 LLM이 무의미한 출력 생성
+
+**`70e6d5a` feat(eval): 평가자 4개 추가 — 안전성·캐시백 적합성·추천 적절성·RAG 충실도**
+- `target()` 함수를 `run_multi_agent()` → `_get_graph().invoke()` 직접 호출로 변경
+  - 중간 상태(`nilm_output`, `cashback_output`, `rag_context`)를 평가자에 노출
+- `safety`: 사용 중단·필수 가전 중단 표현 감지 (금지어 목록 기반)
+- `cashback_compliance`: 단계 요율 테이블 일치 + 정산액 계산 정합성 검증
+- `rec_relevance`: NILM `top_consumers` ↔ 권고 논리 연결 LLM judge
+- `rag_faithfulness`: RAG 청크 ↔ 진단·권고 일치 LLM judge (청크 없으면 중립 0.5)
+
+**`00b2d50` feat(eval): 평가자 5개 추가 — 중복·계절·커버리지·지연·비용**
+- `rec_uniqueness`: `top_consumers` 기기명 기준 권고 중복 탐지
+- `seasonal_alignment`: 날씨 `tavg` 기온 기준 냉·난방 방향 일치 검증
+- `anomaly_coverage`: 이상 이벤트 건수 대비 진단 커버리지 비율 (0.0~1.0)
+- `latency`: graph invoke 실측 ms, SLA 30s 기준 0/1
+- `cost_estimate`: `langchain_community` 콜백 실측 → 없으면 문자 기반 rough 추정
+
+**`6579d67` fix(eval): cashback_compliance — enrolled 필드 오용 제거**
+- `enrolled` 필드가 `savings_rate >= 3%` 여부를 나타낸다고 잘못 해석하여 발생한 오류 수정
+  - 실제 `enrolled` = DB의 **프로그램 가입 여부** (savings_rate와 독립적)
+  - 수정: `enrolled` 검사 제거 → 요율 불일치·정산액 불일치만 검증
+
+---
+
+### 현재 평가자 목록 (14개)
+
+| 유형 | 평가자 | 측정 항목 |
+|------|--------|-----------|
+| 규칙 | `schema_valid` | anomaly_diagnoses·recommendations 키 존재 여부 |
+| 규칙 | `rec_count` | 권고 3~5개 범위 |
+| 규칙 | `savings_range` | savings_kwh 0.1~10.0 kWh 범위 |
+| 규칙 | `field_length` | title ≤30자, action ≤15자, diagnosis ≤100자 |
+| 규칙 | `safety` | 사용 중단·필수 가전 중단 표현 부재 |
+| 규칙 | `cashback_compliance` | 요율 테이블 일치 + 정산액 계산 정합성 |
+| 규칙 | `rec_uniqueness` | 기기명 중복 권고 없음 |
+| 규칙 | `seasonal_alignment` | 기온 기준 냉·난방 방향 일치 |
+| 규칙 | `anomaly_coverage` | 이상 이벤트 대비 진단 커버리지 비율 |
+| LLM judge | `rec_relevance` | NILM top_consumers ↔ 권고 논리 연결 |
+| LLM judge | `rag_faithfulness` | RAG 청크 ↔ 진단·권고 근거 일치 |
+| LLM judge | `llm_quality` | 전반적 출력 품질 (0.0~1.0) |
+| 런타임 | `latency` | graph invoke ms, SLA 30s 기준 |
+| 런타임 | `cost_estimate` | LLM 호출 비용 추정 (원) |
+
+---
+
 ## 4. 현재 DB 상태
 
 | 테이블 | 행 수 | 상태 |
@@ -210,6 +342,9 @@ kpx-integration-settlement/
 | `power_1hour` | 124,992 | ✅ 실데이터 (9가구) |
 | `household_daily_env` | 2,449 | ✅ 실데이터 |
 | `appliance_status_intervals` | 12 | ⚠️ 목업 시드 (NILM 엔진 실데이터 대기) |
+| `rag_chunks` | — | ⚠️ embed_rag_docs.py 실행 필요 (pgvector 테이블, DB 연결 시) |
+| `monthly_baselines` | — | ⚠️ refresh_all_baselines Celery 태스크 1회 실행 필요 |
+| `cashback_results` | — | ⚠️ finalize_cashback_results Celery 태스크 실행 필요 |
 | `dr_events` / `dr_results` | 0 | ❌ 미연결 |
 
 ---
@@ -220,14 +355,35 @@ kpx-integration-settlement/
 |------|------|
 | DR 관련 테이블 연결 | `dr_events`/`dr_results` 데이터 없음 — NILM 엔진 실적 투입 후 진행 |
 | `appliance_status_intervals` 실데이터 | NILM 엔진에서 실 추론 결과 적재 필요 |
-| PR #72 리뷰·merge | Frontend 브랜치 → main |
+| RAG 임베딩 적재 | DB 연결 환경에서 `python scripts/embed_rag_docs.py` 1회 실행 필요 |
+| LangSmith 50가구 전체 평가 실행 | `python scripts/evaluate_agent.py` — ~$1-2, LLM 150+ 호출 |
+| PR 리뷰·merge | Frontend 브랜치 → main |
 
 ---
 
-## 6. 아키텍처 선택 이유 (RAG vs Tool-use)
+## 6. 아키텍처 선택 이유
 
-현재 파트는 **Tool-use Agent** 패턴만 사용하며 RAG를 사용하지 않는다.
+### Tool-use vs RAG
 
-- **데이터 소스가 구조화된 DB 테이블** (`power_1hour`, `appliance_status_intervals` 등) — "어느 문서에 답이 있는지 검색"하는 RAG가 필요 없음
-- Tool-use = "어느 함수를 어떤 파라미터로 호출할지" LLM이 결정 → DB 쿼리 결과를 직접 LLM에 전달
-- RAG가 의미 있어질 시점: 가전 매뉴얼·KEPCO 고시문 등 비구조화 텍스트를 진단 근거로 쓰고 싶을 때
+현재 파트는 **Tool-use + RAG 혼합** 패턴을 사용한다.
+
+- **Module 2·3**: Tool-use — 데이터 소스가 구조화된 DB 테이블(`power_1hour`, `appliance_status_intervals`)이므로 RAG 불필요
+- **Module 4**: RAG — 에너지캐시백 지식베이스(한국어 문서 7개)를 `pgvector` 유사도 검색으로 참조
+  - 가전 매뉴얼·KEPCO 고시문 등 비구조화 텍스트를 진단 근거로 활용
+  - DB 미연결 시 `[]` 폴백 → 에이전트 동작에 영향 없음
+
+### 단일 ReAct vs 멀티에이전트 (수퍼바이저)
+
+| | 단일 ReAct (`coach.py`) | 멀티에이전트 (`supervisor.py`) |
+|--|-------------------------|-------------------------------|
+| LLM 호출 | 매 도구 호출마다 | Module 2·5만 LLM, Module 3은 순수 계산 |
+| 병렬화 | 불가 | Module 2·3 병렬 실행 |
+| 레이턴시 | 높음 | 낮음 |
+| 현재 사용 | Fallback | 기본 경로 |
+
+멀티에이전트를 기본 경로로 쓰고 단일 에이전트는 장애 시 폴백으로 유지.
+
+### savings_krw Python 후처리 이유
+
+LLM에 단가 계산을 위임하면 항목별 단가가 달라지는 일관성 문제 발생.  
+`cashback_unit_rate(household_id)` 함수로 가구 이력에서 단가를 추출 → 파싱 직후 일괄 적용.

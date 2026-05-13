@@ -1570,7 +1570,7 @@ def get_consumption_hourly(
     raw: [{"hour": 0~23, "kwh": float}, ...] 24개 행.
     """
     conn = _get_db_conn()
-    if conn:
+    if conn and household_id not in _KNOWN_HOUSEHOLDS:
         return _db_consumption_hourly(conn, household_id, date)
     # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
@@ -1672,7 +1672,7 @@ def get_anomaly_events(household_id: str, status: str = "active") -> dict[str, A
     status: 'active' | 'all'
     """
     conn = _get_db_conn()
-    if conn:
+    if conn and household_id not in _KNOWN_HOUSEHOLDS:
         return _db_anomaly_events(conn, household_id, status)
     # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
@@ -1739,7 +1739,7 @@ def get_hourly_appliance_breakdown(household_id: str, date: str = "2026-04-27") 
     4주차 appliance_status_intervals 연결 후 실측치로 교체 예정.
     """
     conn = _get_db_conn()
-    if conn:
+    if conn and household_id not in _KNOWN_HOUSEHOLDS:
         return _db_hourly_breakdown(conn, household_id, date)
     # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
