@@ -164,7 +164,7 @@ class ShortTermBuilder:
         # TDA는 레퍼런스 빌드(extract_on_segments)와 동일하게 원본 신호를 그대로 사용.
         # on_thr 필터링 시 듀티사이클 0W 구간이 제거되어 위상 구조가 달라지는 문제 방지.
         # 진짜 OFF 기간은 group 자체가 nilm-engine이 이미 걸러낸 결과.
-        if not any(group["power_w"] >= on_thr):
+        if not (group["power_w"] >= on_thr).any():
             return []  # 전체가 대기전력 이하 → 이벤트 없음
         work = group.copy()
 
