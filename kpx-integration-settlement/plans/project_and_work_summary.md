@@ -312,6 +312,58 @@ kpx-integration-settlement/
   - 실제 `enrolled` = DB의 **프로그램 가입 여부** (savings_rate와 독립적)
   - 수정: `enrolled` 검사 제거 → 요율 불일치·정산액 불일치만 검증
 
+**`480bf23` fix(eval): seasonal_alignment 오탐 수정 + rec_relevance regex 강화**
+
+*문제 1 — `seasonal_alignment` 전 가구 0.000*
+
+- **근본 원인**: 효율 방향 권고 제목(예: `"전기장판 온도 단계 낮추기"`)이 난방 가전 키워드 `"전기장판"`을 포함 → 평가자가 여름철 난방 방향 위반으로 오탐
+- **수정**: `_EFFICIENCY_KEYWORDS = ["낮추기", "줄이기", "절전", "조정", "타이머", "설정", "최적화", "점검", "단계", "예약", "모아서"]` allow-list 추가
+  - 해당 키워드가 제목에 포함되면 계절 방향 검사를 건너뜀 — "에어컨 낮추기"처럼 냉방 기기를 절전하는 권고도 올바르게 통과
+- **결과**: 0.000 → **0.980** (HH049 1건 실제 위반 잔존)
+
+*문제 2 — `rec_relevance` 전 가구 0.500 (1차 원인)*
+
+- **근본 원인**: `_call_judge` 정규식 `r"점수\s*:\s*([1-5])"` 이 gpt-4o-mini 출력(`점수：3`, `Score: 4`, `점수: 3.5` 등)을 매칭하지 못해 항상 기본값 0.5 반환
+- **수정**: 정규식을 `r"(?:점수|Score)\s*[:：]\s*([1-5])(?:\.\d)?"` 로 강화 (전각 콜론·영문 라벨·소수점 처리), 매칭 실패 시 첫 30자에서 단독 숫자 fallback 추가
+
+**`a0acf6d` fix(data_tools): mock 가구(HH001-HH050) IAP 터널 연결 시 DB 라우팅 버그 수정**
+
+*문제 — `rec_relevance` 전 가구 0.500 (2차 · 실제 근본 원인)*
+
+- **배경**: regex 강화 후에도 여전히 0.500 고착 → 데이터 흐름 추적
+- **근본 원인**: IAP 터널 활성화 상태(localhost:5436)에서 `_get_db_conn()`이 실제 DB 커넥션 반환 → `get_hourly_appliance_breakdown` / `get_consumption_hourly` / `get_anomaly_events` 세 함수 모두 `if conn:` 분기로 DB를 조회
+  - DB에 HH001~HH050 행 없음 → 세 함수 모두 `E_NO_DATA` 반환
+  - `nilm_monitor` 노드가 빈 `daily_summary: []`·`anomalies: []` 수신 → LLM이 `top_consumers: []` 생성
+  - `rec_relevance` 평가자는 `top_consumers`가 비어 있으면 판단 불가 → 조기 반환 0.5
+
+- **수정**: 세 함수에서 `if conn:` → `if conn and household_id not in _KNOWN_HOUSEHOLDS:`
+  ```python
+  # 수정 전 (버그)
+  conn = _get_db_conn()
+  if conn:
+      return _db_hourly_breakdown(conn, household_id, date)
+
+  # 수정 후
+  conn = _get_db_conn()
+  if conn and household_id not in _KNOWN_HOUSEHOLDS:
+      return _db_hourly_breakdown(conn, household_id, date)
+  ```
+  - `_KNOWN_HOUSEHOLDS` = `_build_synthetic_households()`가 생성하는 HH001~HH050 집합
+  - mock 가구는 IAP 터널 활성 여부와 무관하게 항상 인메모리 mock 데이터를 사용, 실 가구(H011 등)는 그대로 DB 조회
+
+- **eval-fix-v3 결과 (50가구)**:
+
+  | 지표 | 수정 전 | 수정 후 |
+  |------|---------|---------|
+  | `rec_relevance` | 0.500 | **0.968** |
+  | `seasonal_alignment` | 0.000 | **0.980** |
+  | `llm_quality` | 0.600 | **0.792** |
+  | `rag_faithfulness` | 0.500 | **0.880** |
+  | `rec_uniqueness` | — | 0.740 |
+  | `latency` | — | 0.980 |
+  | `cost_estimate` | — | 0.280 |
+  | `schema_valid` / `rec_count` / `savings_range` / `field_length` / `safety` / `cashback_compliance` / `anomaly_coverage` | 1.000 | **1.000** |
+
 ---
 
 ### 현재 평가자 목록 (14개)
