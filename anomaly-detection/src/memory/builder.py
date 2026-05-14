@@ -17,6 +17,7 @@ from anomaly_detection.src.models.schemas import DisaggregationResult
 from anomaly_detection.src.tda.mode_detector import (
     APPLIANCE_MAX_W,
     TDA_APPLIANCES,
+    WINDOW_SIZE,
     classify_mode_attention,
     compute_fingerprint,
     load_references,
@@ -24,11 +25,10 @@ from anomaly_detection.src.tda.mode_detector import (
 
 _STANDBY_MIN_W = 1.0
 _STANDBY_MIN_MIN = 30.0
-_ENTROPY_FALLBACK = 1.0   # entropy > 이 값이면 attention 결과 미채택 → W-range 모드 유지
-_HYSTERESIS_W = 10.0  # 경계 dead-band: 현재 모드 이탈에 ±10W 추가 마진 요구
+_ENTROPY_FALLBACK = 1.0
+_HYSTERESIS_W = 10.0
 
 # 코드에서 사용하는 가전명 → thresholds.yaml 키 매핑
-# (yaml은 괄호/슬래시/공백 없이 축약, 코드는 AI Hub 표기 그대로)
 _THRESHOLD_KEY_MAP: dict[str, str] = {
     "일반 냉장고": "일반냉장고",
     "식기세척기/건조기": "식기세척기",
@@ -47,11 +47,6 @@ def _load_thresholds(config_path: str | Path) -> dict:
 def _classify_with_hysteresis(
     smoothed_w: np.ndarray, states: list[dict]
 ) -> np.ndarray:
-    """rolling mean 값에 히스테리시스를 적용해 경계 진동을 억제한다.
-
-    현재 모드에서 벗어나려면 경계를 _HYSTERESIS_W만큼 추가로 넘어야 한다.
-    초기 모드는 첫 샘플 기준 nominal 분류로 결정된다.
-    """
     if not states or len(smoothed_w) == 0:
         return np.full(len(smoothed_w), "unknown", dtype=object)
 
@@ -104,9 +99,9 @@ def _detect_standby(series: pd.Series, on_thr: float) -> StandbyEvent | None:
 class ShortTermBuilder:
     """DisaggregationResult → ShortTermEvent 변환.
 
-    TDA 적용 가전: W 범위로 세그먼트 경계 검출 후 Persistence Image L2 거리로 모드 재분류.
-    TDA 미적용 가전: W 범위 룩업으로만 모드 분류.
-    references_path가 없거나 파일 미존재 시 전체 W 범위 룩업으로 폴백.
+    TDA 적용 가전(10종): 고정 윈도우(WINDOW_SIZE) 슬라이딩 → TDA classify → 연속 동일 모드 병합.
+    TDA 미적용 가전(12종): W 범위 + 히스테리시스 세그먼트.
+    references_path 없거나 해당 가전 레퍼런스 없으면 W 범위로 폴백.
     """
 
     def __init__(
@@ -153,6 +148,16 @@ class ShortTermBuilder:
     def _build_appliance(
         self, appliance: str, group: pd.DataFrame
     ) -> list[ShortTermEvent]:
+        if appliance in TDA_APPLIANCES and self._references.get(appliance):
+            return self._build_tda_appliance(appliance, group)
+        return self._build_wrange_appliance(appliance, group)
+
+    # ── TDA 경로 ────────────────────────────────────────────────────────────
+
+    def _build_tda_appliance(
+        self, appliance: str, group: pd.DataFrame
+    ) -> list[ShortTermEvent]:
+        """고정 윈도우 TDA classify → 연속 동일 모드 병합 → 이벤트."""
         on_thr = ON_THRESHOLDS.get(appliance, DEFAULT_ON_THRESHOLD)
         standby = _detect_standby(group["power_w"], on_thr)
 
@@ -163,7 +168,97 @@ class ShortTermBuilder:
             if work.empty:
                 return []
 
-        # 1초 rolling mean으로 듀티사이클 노이즈 감소 후 히스테리시스로 경계 진동 억제
+        max_w = APPLIANCE_MAX_W.get(appliance, 1.0)
+        signals = work["power_w"].values
+        n = len(signals)
+
+        # 윈도우별 TDA 분류 — (start_idx, end_idx, mode, entropy)
+        labeled: list[tuple[int, int, str, float | None]] = []
+        for start in range(0, n, WINDOW_SIZE):
+            end = min(start + WINDOW_SIZE, n)
+            fp = compute_fingerprint(signals[start:end], max_w)
+            mode, entropy = classify_mode_attention(appliance, fp, self._references)
+            if mode is None or (entropy is not None and entropy > _ENTROPY_FALLBACK):
+                mode = "unknown"
+                entropy = None
+            labeled.append((start, end, mode, entropy))
+
+        if not labeled:
+            return []
+
+        # 연속 동일 모드 병합
+        events: list[ShortTermEvent] = []
+        seg_start = 0
+        for i in range(1, len(labeled)):
+            if labeled[i][2] != labeled[seg_start][2]:
+                events.append(self._make_tda_event(
+                    appliance, work, signals, labeled[seg_start:i],
+                    standby if seg_start == 0 else None,
+                ))
+                seg_start = i
+        events.append(self._make_tda_event(
+            appliance, work, signals, labeled[seg_start:],
+            standby if seg_start == 0 else None,
+        ))
+
+        return events
+
+    def _make_tda_event(
+        self,
+        appliance: str,
+        work: pd.DataFrame,
+        signals: np.ndarray,
+        labeled: list[tuple[int, int, str, float | None]],
+        standby: StandbyEvent | None,
+    ) -> ShortTermEvent:
+        start_row = labeled[0][0]
+        end_row = labeled[-1][1]
+        segment = work.iloc[start_row:end_row]
+
+        delta = segment.index.to_series().diff().dropna().median()
+        sample_h = (
+            delta.total_seconds() / 3600
+            if not pd.isna(delta)
+            else 1 / (30 * 3600)
+        )
+
+        mode = labeled[0][2]
+        entropies = [e for _, _, _, e in labeled if e is not None]
+        mode_confidence = float(np.mean(entropies)) if entropies else None
+
+        # 대표 fingerprint: 병합 구간 중앙 윈도우
+        mid = labeled[len(labeled) // 2]
+        max_w = APPLIANCE_MAX_W.get(appliance, 1.0)
+        fingerprint = compute_fingerprint(signals[mid[0]:mid[1]], max_w)
+
+        return ShortTermEvent(
+            appliance=appliance,
+            mode=mode,
+            started_at=segment.index[0].to_pydatetime(),
+            duration_min=round(len(segment) * sample_h * 60, 1),
+            energy_wh=round(float(segment["power_w"].sum() * sample_h), 3),
+            avg_w=round(float(segment["power_w"].mean()), 2),
+            peak_w=round(float(segment["power_w"].max()), 2),
+            tda_fingerprint=fingerprint,
+            mode_confidence=mode_confidence,
+            standby=standby,
+        )
+
+    # ── W-range 경로 ─────────────────────────────────────────────────────────
+
+    def _build_wrange_appliance(
+        self, appliance: str, group: pd.DataFrame
+    ) -> list[ShortTermEvent]:
+        on_thr = ON_THRESHOLDS.get(appliance, DEFAULT_ON_THRESHOLD)
+        standby = _detect_standby(group["power_w"], on_thr)
+
+        if appliance in ALWAYS_ON:
+            work = group.copy()
+        else:
+            work = group[group["power_w"] >= on_thr].copy()
+            if work.empty:
+                return []
+
         smoothed_w = work["power_w"].rolling("1s", min_periods=1).mean().values
         key = _THRESHOLD_KEY_MAP.get(appliance, appliance)
         states = self._thresholds.get(key, {}).get("states", [])
@@ -175,16 +270,15 @@ class ShortTermBuilder:
         for i, (_, segment) in enumerate(work.groupby("seg")):
             if len(segment) < 2:
                 continue
-            event = self._make_event(
+            events.append(self._make_wrange_event(
                 appliance=appliance,
                 segment=segment,
                 standby=standby if i == 0 else None,
-            )
-            events.append(event)
+            ))
 
         return events
 
-    def _make_event(
+    def _make_wrange_event(
         self,
         appliance: str,
         segment: pd.DataFrame,
@@ -194,30 +288,18 @@ class ShortTermBuilder:
         sample_h = (
             delta.total_seconds() / 3600
             if not pd.isna(delta)
-            else 1 / (30 * 3600)  # 30Hz fallback — 1샘플 세그먼트 대비
+            else 1 / (30 * 3600)
         )
-        avg_w = float(segment["power_w"].mean())
-        mode = segment["mode"].iloc[0]
-
-        fingerprint = None
-        mode_confidence = None
-        if appliance in TDA_APPLIANCES:
-            max_w = APPLIANCE_MAX_W.get(appliance, 1.0)
-            fingerprint = compute_fingerprint(segment["power_w"].values, max_w)
-            tda_mode, entropy = classify_mode_attention(appliance, fingerprint, self._references)
-            if tda_mode is not None and (entropy is None or entropy <= _ENTROPY_FALLBACK):
-                mode = tda_mode
-                mode_confidence = entropy
 
         return ShortTermEvent(
             appliance=appliance,
-            mode=mode,
+            mode=segment["mode"].iloc[0],
             started_at=segment.index[0].to_pydatetime(),
             duration_min=round(len(segment) * sample_h * 60, 1),
             energy_wh=round(float(segment["power_w"].sum() * sample_h), 3),
-            avg_w=round(avg_w, 2),
+            avg_w=round(float(segment["power_w"].mean()), 2),
             peak_w=round(float(segment["power_w"].max()), 2),
-            tda_fingerprint=fingerprint,
-            mode_confidence=mode_confidence,
+            tda_fingerprint=None,
+            mode_confidence=None,
             standby=standby,
         )
