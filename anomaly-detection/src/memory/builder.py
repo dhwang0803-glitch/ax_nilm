@@ -172,16 +172,18 @@ class ShortTermBuilder:
         signals = work["power_w"].values
         n = len(signals)
 
-        # 윈도우별 TDA 분류 — (start_idx, end_idx, mode, entropy)
-        labeled: list[tuple[int, int, str, float | None]] = []
+        # 윈도우별 TDA 분류 — (start_idx, end_idx, mode, entropy, fingerprint)
+        labeled: list[tuple[int, int, str, float | None, list | None]] = []
         for start in range(0, n, WINDOW_SIZE):
             end = min(start + WINDOW_SIZE, n)
+            if end - start < 50:   # _MIN_POINTS 미만 꼬리 윈도우 스킵
+                break
             fp = compute_fingerprint(signals[start:end], max_w)
             mode, entropy = classify_mode_attention(appliance, fp, self._references)
             if mode is None or (entropy is not None and entropy > _ENTROPY_FALLBACK):
                 mode = "unknown"
                 entropy = None
-            labeled.append((start, end, mode, entropy))
+            labeled.append((start, end, mode, entropy, fp))
 
         if not labeled:
             return []
@@ -196,10 +198,11 @@ class ShortTermBuilder:
                     standby if seg_start == 0 else None,
                 ))
                 seg_start = i
-        events.append(self._make_tda_event(
-            appliance, work, signals, labeled[seg_start:],
-            standby if seg_start == 0 else None,
-        ))
+        if labeled[seg_start:]:
+            events.append(self._make_tda_event(
+                appliance, work, signals, labeled[seg_start:],
+                standby if seg_start == 0 else None,
+            ))
 
         return events
 
@@ -208,7 +211,7 @@ class ShortTermBuilder:
         appliance: str,
         work: pd.DataFrame,
         signals: np.ndarray,
-        labeled: list[tuple[int, int, str, float | None]],
+        labeled: list[tuple[int, int, str, float | None, list | None]],
         standby: StandbyEvent | None,
     ) -> ShortTermEvent:
         start_row = labeled[0][0]
@@ -223,13 +226,11 @@ class ShortTermBuilder:
         )
 
         mode = labeled[0][2]
-        entropies = [e for _, _, _, e in labeled if e is not None]
+        entropies = [e for _, _, _, e, _ in labeled if e is not None]
         mode_confidence = float(np.mean(entropies)) if entropies else None
 
-        # 대표 fingerprint: 병합 구간 중앙 윈도우
-        mid = labeled[len(labeled) // 2]
-        max_w = APPLIANCE_MAX_W.get(appliance, 1.0)
-        fingerprint = compute_fingerprint(signals[mid[0]:mid[1]], max_w)
+        # 대표 fingerprint: 병합 구간 중앙 윈도우 (루프에서 계산한 값 재사용)
+        fingerprint = labeled[len(labeled) // 2][4]
 
         return ShortTermEvent(
             appliance=appliance,
