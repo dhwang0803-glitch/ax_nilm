@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import time
 from collections import defaultdict
 
@@ -13,6 +14,17 @@ from src.agent.multi_agent.cashback_node import cashback_unit_rate
 from src.agent.multi_agent import run_multi_agent
 
 router = APIRouter()
+
+_SEVERITY_MAP = {
+    "critical": "high",
+    "error":    "high",
+    "warning":  "medium",
+    "warn":     "medium",
+    "info":     "low",
+    "low":      "low",
+    "medium":   "medium",
+    "high":     "high",
+}
 
 # ── 인메모리 캐시 (TTL 1시간) ─────────────────────────────────────
 
@@ -80,8 +92,8 @@ def _weekly_trend(log_records: list[dict]) -> list[dict]:
 # ── 엔드포인트 ────────────────────────────────────────────────────
 
 @router.get("/insights/summary")
-def insights_summary(household_id: str = "HH001"):
-    hh = household_id
+def insights_summary():
+    hh = os.getenv("DEFAULT_HH", "HH001")
 
     events_data = get_anomaly_events(hh, status="active")
     log_data    = get_anomaly_log(hh)
@@ -89,30 +101,59 @@ def insights_summary(household_id: str = "HH001"):
     raw_events = events_data.get("raw", [])
     raw_log    = log_data.get("raw", [])
 
-    total_kwh  = round(sum(e.get("excess_kwh", 0) for e in raw_events), 1)
     confidence = max((e.get("confidence", 0) for e in raw_events), default=0)
 
-    result          = get_or_run_insights(hh)
-    diagnoses       = [d.model_dump() for d in result.anomaly_diagnoses]
-    recommendations = [r.model_dump() for r in result.recommendations]
+    result   = get_or_run_insights(hh)
+    diag_map = {d.event_id: d for d in result.anomaly_diagnoses}
 
-    diag_map  = {d["event_id"]: d for d in diagnoses}
-    anomalies = [
+    anomaly_highlights = [
         {
-            **e,
-            "diagnosis": diag_map.get(e["event_id"], {}).get("diagnosis", e.get("description", "")),
-            "action":    diag_map.get(e["event_id"], {}).get("action", "점검 필요"),
+            "id":             e.get("event_id", f"evt-{i}"),
+            "appliance":      e.get("appliance", e.get("appliance_name", "알 수 없음")),
+            "severity":       _SEVERITY_MAP.get(e.get("severity", "info"), "low"),
+            "headline":       diag_map[e["event_id"]].diagnosis if e.get("event_id") in diag_map else e.get("description", ""),
+            "recommendation": diag_map[e["event_id"]].action    if e.get("event_id") in diag_map else "점검 필요",
+            "detectedAt":     e.get("detected_at", ""),
         }
-        for e in raw_events
+        for i, e in enumerate(raw_events)
     ]
 
+    recs_out = [
+        {
+            "id":                 f"rec-{i}",
+            "appliance":          "",
+            "action":             r.title,
+            "estimatedSavingKrw": r.savings_krw,
+            "confidence":         round(confidence, 2),
+        }
+        for i, r in enumerate(result.recommendations)
+    ]
+
+    weekly_raw   = _weekly_trend(raw_log)
+    weekly_trend = [
+        {
+            "weekLabel":          w["day"],
+            "diagnosisCount":     w["count"],
+            "estimatedSavingKrw": 0,
+        }
+        for w in weekly_raw
+    ]
+
+    monthly_saving_krw = sum(r.savings_krw for r in result.recommendations)
+    weekly_count       = sum(w["count"] for w in weekly_raw)
+
     return {
-        "summary": {
-            "totalAnomalies":  len(raw_events),
-            "anomalyKwh":      total_kwh,
-            "modelConfidence": round(confidence * 100),
+        "generatedAt":      datetime.datetime.now().isoformat(),
+        "modelVersion":     "v2.4",
+        "sampleHouseholds": 79,
+        "kpi": {
+            "weeklyDiagnosisCount":      weekly_count,
+            "weeklyDiagnosisDelta":      0,
+            "monthlyEstimatedSavingKrw": monthly_saving_krw,
+            "monthlySavingDelta":        0,
+            "modelConfidence":           round(confidence, 2),
         },
-        "anomalies":       anomalies,
-        "recommendations": recommendations,
-        "weeklyTrend":     _weekly_trend(raw_log),
+        "anomalyHighlights": anomaly_highlights,
+        "recommendations":   recs_out,
+        "weeklyTrend":       weekly_trend,
     }

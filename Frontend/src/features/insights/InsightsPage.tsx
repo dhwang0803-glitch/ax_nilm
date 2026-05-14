@@ -9,7 +9,7 @@ export function InsightsPage() {
 
   if (isLoading) return <InsightsSkeleton />;
 
-  if (isError || !data) {
+  if (isError || !data || !data.kpi) {
     return (
       <div className="flex flex-col gap-3">
         <header>

@@ -485,6 +485,206 @@ _MOCK_ANOMALY_LOG: dict[str, list[dict]] = {
     ],
 }
 
+def _build_synthetic_households(start: int = 4, end: int = 50) -> None:
+    """HH004~HH050 합성 mock 데이터 생성 (seed = 가구번호 → 재현 가능)."""
+    import random
+
+    _APPLIANCE_POOL = [
+        {"name": "에어컨",     "estimated_w": 1200, "eff": (1, 3)},
+        {"name": "냉장고",     "estimated_w": 140,  "eff": (1, 3)},
+        {"name": "세탁기",     "estimated_w": 900,  "eff": (1, 3)},
+        {"name": "TV",         "estimated_w": 120,  "eff": (1, 3)},
+        {"name": "전기밥솥",   "estimated_w": 700,  "eff": None},
+        {"name": "전자레인지", "estimated_w": 1000, "eff": None},
+        {"name": "컴퓨터",     "estimated_w": 400,  "eff": None},
+        {"name": "공기청정기", "estimated_w": 50,   "eff": (1, 3)},
+        {"name": "전기포트",   "estimated_w": 1500, "eff": None},
+        {"name": "의류건조기", "estimated_w": 2000, "eff": (1, 3)},
+        {"name": "식기세척기", "estimated_w": 1200, "eff": None},
+        {"name": "인덕션",     "estimated_w": 1800, "eff": None},
+        {"name": "전기장판",   "estimated_w": 200,  "eff": None},
+        {"name": "김치냉장고", "estimated_w": 160,  "eff": (1, 3)},
+        {"name": "선풍기",     "estimated_w": 50,   "eff": None},
+    ]
+    # TV와 컴퓨터는 동일한 "절전 모드·타이머" 권고를 받으므로 한 가구에 동시 존재 금지
+    _EXCLUSIVE_GROUPS = [{"TV", "컴퓨터"}]
+    _HOUSE_TYPES = ["아파트", "빌라", "단독주택", "오피스텔"]
+    _AREAS       = [33, 40, 52, 59, 66, 75, 84, 99, 115, 132]
+    _TYPES_ANOM  = [
+        ("비정상 소비 패턴", "평상시 대비 {pct}% 높은 소비량 감지 — 필터 오염 또는 설정 이상 의심"),
+        ("장시간 고출력 가동", "장시간 고출력 가동 감지 — 점검 권고"),
+        ("대기전력 과다", "야간 대기전력 지속 — 플러그 미제거 또는 설정 확인"),
+    ]
+
+    for n in range(start, end + 1):
+        hh = f"HH{n:03d}"
+        rng = random.Random(n * 137)
+
+        # ── 프로필 ──────────────────────────────────────────────────────
+        n_app = rng.randint(4, 6)  # 최소 4개 → 권고 다양성 확보
+        pool  = rng.sample(_APPLIANCE_POOL, n_app)
+        if not any(a["name"] == "냉장고" for a in pool):
+            pool[0] = next(a for a in _APPLIANCE_POOL if a["name"] == "냉장고")
+        # 동일 권고 그룹(TV·컴퓨터)은 최대 1개만 유지
+        for group in _EXCLUSIVE_GROUPS:
+            members_in_pool = [a for a in pool if a["name"] in group]
+            if len(members_in_pool) > 1:
+                for dup in members_in_pool[1:]:
+                    pool.remove(dup)
+        appliances = [
+            {
+                "name": a["name"],
+                "energy_efficiency": rng.randint(*a["eff"]) if a["eff"] else None,
+                "estimated_w": a["estimated_w"],
+            }
+            for a in pool
+        ]
+        members = rng.randint(1, 5)
+        tier    = rng.randint(1, 3)
+        _MOCK_PROFILES[hh] = {
+            "house_type":   rng.choice(_HOUSE_TYPES),
+            "area_m2":      rng.choice(_AREAS),
+            "floor":        rng.randint(1, 15),
+            "members":      members,
+            "appliances":   appliances,
+            "subscription": f"주택용(저압) 누진 {tier}단계",
+        }
+
+        # ── 소비 요약 ────────────────────────────────────────────────────
+        daily_kwh  = round(2.0 + members * 2.5 + _MOCK_PROFILES[hh]["area_m2"] * 0.04 + rng.uniform(-3, 3), 1)
+        peak_hours = sorted(rng.sample(range(24), 3))
+        _MOCK_CONSUMPTION_SUMMARY[hh] = {
+            "total_kwh":          round(daily_kwh * 7, 1),
+            "daily_avg_kwh":      daily_kwh,
+            "yoy_change_pct":     round(rng.uniform(-15.0, 25.0), 1),
+            "peak_hours":         peak_hours,
+            "peak_avg_w":         int(daily_kwh * 1000 * rng.uniform(0.15, 0.25)),
+            "weekend_uplift_pct": round(rng.uniform(-10.0, 30.0), 1),
+        }
+
+        # ── 시간대별 소비 ────────────────────────────────────────────────
+        base = daily_kwh / 24
+        hourly = []
+        for h in range(24):
+            if 0 <= h < 6:
+                f = rng.uniform(0.3, 0.6)
+            elif 6 <= h < 9:
+                f = rng.uniform(1.2, 2.0)
+            elif 9 <= h < 17:
+                f = rng.uniform(0.6, 1.2)
+            elif 17 <= h < 23:
+                f = rng.uniform(1.5, 2.5)
+            else:
+                f = rng.uniform(0.5, 1.0)
+            if h in peak_hours:
+                f *= 1.4
+            hourly.append({"hour": h, "kwh": round(base * f, 2)})
+        _MOCK_HOURLY[hh] = hourly
+
+        # ── 기기별 분해 ──────────────────────────────────────────────────
+        breakdown  = []
+        remaining  = daily_kwh
+        for i, a in enumerate(appliances):
+            share = rng.uniform(0.08, 0.35) if i < len(appliances) - 1 else rng.uniform(0.4, 0.7)
+            kwh   = round(min(remaining * share, remaining - 0.05 * (len(appliances) - i - 1)), 2)
+            remaining -= kwh
+            intervals = (
+                [{"start": "00:00", "end": "23:59"}]
+                if a["name"] in ("냉장고", "김치냉장고", "공기청정기")
+                else [{"start": f"{rng.randint(6,18):02d}:00", "end": f"{rng.randint(19,23):02d}:59"}]
+            )
+            breakdown.append({
+                "appliance":        a["name"],
+                "kwh":              max(kwh, 0.01),
+                "share_pct":        round(max(kwh, 0.01) / daily_kwh * 100, 1),
+                "active_intervals": intervals,
+            })
+        if remaining > 0.01:
+            breakdown.append({
+                "appliance": "기타", "kwh": round(remaining, 2),
+                "share_pct": round(remaining / daily_kwh * 100, 1), "active_intervals": [],
+            })
+        _MOCK_BREAKDOWN[hh] = breakdown
+
+        # ── 캐시백 이력 ──────────────────────────────────────────────────
+        monthly_base = round(daily_kwh * 30 * rng.uniform(0.9, 1.15), 1)
+        history = []
+        for idx, mon in enumerate(["2026-02", "2026-03"]):
+            base_m  = round(monthly_base * (1 - idx * 0.03), 1)
+            sav_pct = round(rng.uniform(-2.0, 20.0), 1)
+            actual  = round(base_m * (1 - sav_pct / 100), 1)
+            sav_kwh = round(base_m - actual, 1)
+            ok      = sav_pct >= 3.0
+            history.append({
+                "month":                    mon,
+                "baseline_kwh":             base_m,
+                "actual_kwh":               actual,
+                "savings_pct":              sav_pct,
+                "savings_kwh":              sav_kwh,
+                "cashback_krw":             int(sav_kwh * 100) if ok else 0,
+                "cashback_rate_krw_per_kwh": 100 if ok else 0,
+                "status":                   "지급완료" if ok else "미달(3% 미만)",
+            })
+        history.append({
+            "month": "2026-04", "baseline_kwh": round(monthly_base * 0.92, 1),
+            "actual_kwh": None, "savings_pct": None, "savings_kwh": None,
+            "cashback_krw": None, "cashback_rate_krw_per_kwh": None, "status": "집계중",
+        })
+        _MOCK_CASHBACK_HISTORY[hh] = history
+
+        # ── 요금 정보 ────────────────────────────────────────────────────
+        mon_kwh = int(daily_kwh * 30)
+        if mon_kwh <= 200:
+            ctier, nxt, bill = 1, 200 - mon_kwh, int(mon_kwh * 93.3)
+        elif mon_kwh <= 400:
+            ctier, nxt, bill = 2, 400 - mon_kwh, int(200 * 93.3 + (mon_kwh - 200) * 187.9)
+        else:
+            ctier, nxt, bill = 3, 0, int(200 * 93.3 + 200 * 187.9 + (mon_kwh - 400) * 280.6)
+        _MOCK_TARIFF[hh] = {
+            "plan":                    "주택용(저압) 누진요금제",
+            "current_tier":            ctier,
+            "current_month_kwh":       mon_kwh,
+            "tier_thresholds_kwh":     [200, 400],
+            "tier_rates_krw":          [93.3, 187.9, 280.6],
+            "kwh_to_next_tier":        nxt,
+            "estimated_monthly_bill_krw": bill,
+        }
+
+        # ── 이상 이벤트 ──────────────────────────────────────────────────
+        top_app = breakdown[0]["appliance"]
+        if rng.random() < 0.6:
+            anom_type, anom_tmpl = rng.choice(_TYPES_ANOM)
+            pct = rng.randint(20, 55)
+            anom_desc = anom_tmpl.format(pct=pct)
+            severity  = rng.choice(["info", "warning", "critical"])
+            conf      = round(rng.uniform(0.60, 0.95), 2)
+            ts        = f"2026-04-{rng.randint(10,29):02d}T{rng.randint(0,23):02d}:{rng.randint(0,59):02d}:00+09:00"
+            status    = rng.choice(["active", "resolved"])
+            # before/after kW: after = before × (1 + pct/100) → 항상 after > before
+            before_kw = round(rng.uniform(0.8, 2.0), 1)
+            after_kw  = round(before_kw * (1 + pct / 100), 1)
+            event = {
+                "event_id":     f"ANO-{hh}-001",
+                "appliance":    top_app,
+                "severity":     severity,
+                "type":         anom_type,
+                "detected_at":  ts,
+                "description":  anom_desc,
+                "before_kw":    before_kw,
+                "after_kw":     after_kw,
+                "confidence":   conf,
+                "model_version": "nilm-v2.1",
+                "status":       status,
+            }
+            _MOCK_ANOMALY_EVENTS[hh] = [event]
+            _MOCK_ANOMALY_LOG[hh]    = [{**event, "resolved_at": None}]
+        else:
+            _MOCK_ANOMALY_EVENTS[hh] = []
+            _MOCK_ANOMALY_LOG[hh]    = []
+
+
+_build_synthetic_households()
+
 _KNOWN_HOUSEHOLDS       = set(_MOCK_PROFILES.keys())
 _KNOWN_LOCATIONS        = set(_MOCK_WEATHER_WEEKLY.keys())
 _KNOWN_CASHBACK_HH      = set(_MOCK_CASHBACK_HISTORY.keys())
@@ -1370,7 +1570,7 @@ def get_consumption_hourly(
     raw: [{"hour": 0~23, "kwh": float}, ...] 24개 행.
     """
     conn = _get_db_conn()
-    if conn:
+    if conn and household_id not in _KNOWN_HOUSEHOLDS:
         return _db_consumption_hourly(conn, household_id, date)
     # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
@@ -1472,7 +1672,7 @@ def get_anomaly_events(household_id: str, status: str = "active") -> dict[str, A
     status: 'active' | 'all'
     """
     conn = _get_db_conn()
-    if conn:
+    if conn and household_id not in _KNOWN_HOUSEHOLDS:
         return _db_anomaly_events(conn, household_id, status)
     # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:
@@ -1539,7 +1739,7 @@ def get_hourly_appliance_breakdown(household_id: str, date: str = "2026-04-27") 
     4주차 appliance_status_intervals 연결 후 실측치로 교체 예정.
     """
     conn = _get_db_conn()
-    if conn:
+    if conn and household_id not in _KNOWN_HOUSEHOLDS:
         return _db_hourly_breakdown(conn, household_id, date)
     # mock fallback
     if household_id not in _KNOWN_HOUSEHOLDS:

@@ -20,7 +20,7 @@ def _generate_missions(household_id: str) -> list[dict]:
         {
             "id":                 f"m{i + 1}",
             "title":              r.title,
-            "expectedSavingsKwh": r.savings_kwh,
+            "expectedSavingsKwh": r.savings_kwh or 0.0,
             "status":             "done" if i == len(recs) - 1 else "pending",
         }
         for i, r in enumerate(recs)
