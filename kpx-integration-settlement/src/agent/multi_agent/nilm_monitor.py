@@ -55,13 +55,13 @@ class _NilmLLMOutput(BaseModel):
 # D: 장시간 세션 — 장시간 제외, 나머지 적용
 
 _APPLIANCE_TYPE: dict[str, str] = {
-    "일반 냉장고": "A", "김치냉장고": "A", "무선공유기/셋톱박스": "A",
-    "세탁기": "B", "식기세척기/건조기": "B", "의류건조기": "B",
+    "일반 냉장고": "A", "냉장고": "A", "김치냉장고": "A", "무선공유기/셋톱박스": "A",
+    "세탁기": "B", "식기세척기/건조기": "B", "식기세척기": "B", "의류건조기": "B",
     "에어컨": "D", "제습기": "D", "전기장판/담요": "D", "온수매트": "D",
-    "TV": "D", "컴퓨터": "D", "선풍기": "D", "공기청정기": "D",
-    "전기밥솥": "D", "인덕션(전기레인지)": "D",
+    "TV": "D", "컴퓨터": "D", "컴퓨터(데스크탑)": "D", "선풍기": "D", "공기청정기": "D",
+    "전기밥솥": "D", "인덕션(전기레인지)": "D", "인덕션": "D",
     "전자레인지": "C", "전기포트": "C", "헤어드라이기": "C",
-    "진공청소기": "C", "전기다리미": "C", "에어프라이어": "C",
+    "진공청소기": "C", "진공청소기(유선)": "C", "전기다리미": "C", "에어프라이어": "C",
 }
 _DEFAULT_TYPE = "C"
 
@@ -88,7 +88,7 @@ def _prefilter_events(events: list[dict]) -> list[dict]:
     """대기 세그먼트 제거 + 모드명 정규화."""
     filtered = []
     for evt in events:
-        if evt.get("avg_w", 0) < _STANDBY_W_THRESHOLD:
+        if (evt.get("avg_w") or 0) < _STANDBY_W_THRESHOLD:
             continue
         filtered.append({**evt, "mode": _normalize_mode(evt.get("mode", ""))})
     return filtered
@@ -102,14 +102,14 @@ def _annotate_mode_refs(mode_refs: dict) -> dict:
         new_modes: dict = {}
         for mode_name, mode_data in modes.items():
             entry = {**mode_data}
-            sample_count = entry.get("sample_count", 0)
-            avg_energy = entry.get("avg_energy_wh", 0)
+            sample_count = entry.get("sample_count") or 0
+            avg_energy = entry.get("avg_energy_wh") or 0
             if sample_count < _MIN_BASELINE_SAMPLES:
                 entry["low_confidence"] = True
             elif (avg_energy < _MICRO_SEGMENT_ENERGY_WH
                   and sample_count >= _MICRO_SEGMENT_SAMPLE_MIN):
                 entry["low_confidence"] = True
-            avg_dur = entry.get("avg_duration_min", 0)
+            avg_dur = entry.get("avg_duration_min") or 0
             if 0 < avg_dur < 2.0:
                 entry["duration_threshold_min"] = _MIN_DURATION_FLOOR_MIN
             new_modes[_normalize_mode(mode_name)] = entry
@@ -138,7 +138,7 @@ def _detect_absolute_anomalies(
     for evt in events:
         key = (evt.get("appliance", ""), evt.get("mode", ""))
         if key in lc_modes:
-            groups.setdefault(key, []).append(evt.get("energy_wh", 0))
+            groups.setdefault(key, []).append(evt.get("energy_wh") or 0)
 
     medians: dict[tuple[str, str], float] = {}
     for key, energies in groups.items():
@@ -146,30 +146,37 @@ def _detect_absolute_anomalies(
         n = len(s)
         medians[key] = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
+    seen: set[tuple[str, str, str]] = set()
     flags: list[dict] = []
     for evt in events:
         key = (evt.get("appliance", ""), evt.get("mode", ""))
         if key not in lc_modes:
             continue
         atype = app_types.get(key[0], _DEFAULT_TYPE)
-        peak = evt.get("peak_w", 0)
-        energy = evt.get("energy_wh", 0)
+        peak = evt.get("peak_w") or 0
+        energy = evt.get("energy_wh") or 0
         med = medians.get(key, 0)
 
         if peak >= _PEAK_W_SPIKE:
-            flags.append({
-                "appliance": key[0], "mode": key[1],
-                "flag_type": "피크스파이크",
-                "detail": f"peak {peak:.0f}W (임계 {_PEAK_W_SPIKE:.0f}W 초과)",
-            })
-        elif (atype in ("C", "D")
+            dedup_key = (key[0], key[1], "피크스파이크")
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                flags.append({
+                    "appliance": key[0], "mode": key[1],
+                    "flag_type": "피크스파이크",
+                    "detail": f"peak {peak:.0f}W (임계 {_PEAK_W_SPIKE:.0f}W 초과)",
+                })
+        if (atype in ("C", "D")
               and med > 0
               and energy >= med * _OUTLIER_ENERGY_RATIO):
-            flags.append({
-                "appliance": key[0], "mode": key[1],
-                "flag_type": "에너지이상",
-                "detail": f"energy {energy:.1f}Wh (중앙값 {med:.1f}Wh의 {energy/med:.1f}배)",
-            })
+            dedup_key = (key[0], key[1], "에너지이상")
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                flags.append({
+                    "appliance": key[0], "mode": key[1],
+                    "flag_type": "에너지이상",
+                    "detail": f"energy {energy:.1f}Wh (중앙값 {med:.1f}Wh의 {energy/med:.1f}배)",
+                })
 
     return flags
 
