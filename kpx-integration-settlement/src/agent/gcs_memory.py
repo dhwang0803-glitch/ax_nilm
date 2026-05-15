@@ -15,13 +15,16 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _BUCKET = os.getenv("NILM_MEMORY_BUCKET")
-_LOCAL_DIR = os.getenv("NILM_MEMORY_LOCAL", "")
+_LOCAL_DIR = os.getenv("NILM_MEMORY_LOCAL", "./memory")
+
+_HH_ID_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
 
 def _read_from_gcs(bucket: str, blob_path: str) -> dict | list | None:
@@ -53,6 +56,9 @@ def _read_from_local(base_dir: str, rel_path: str) -> dict | list | None:
 
 def _read_memory(memory_type: str, household_id: str) -> dict | list | None:
     """long_term 또는 short_term JSON을 GCS → 로컬 순으로 읽기 시도."""
+    if not _HH_ID_RE.match(household_id):
+        logger.warning("Invalid household_id rejected: %s", household_id)
+        return None
     rel_path = f"memory/{memory_type}/{household_id}.json"
 
     if _BUCKET:

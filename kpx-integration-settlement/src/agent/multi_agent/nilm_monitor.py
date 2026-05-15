@@ -10,6 +10,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..data_tools import (
@@ -34,7 +36,7 @@ class AnomalyFlag(BaseModel):
     model_config = ConfigDict(extra="forbid")
     appliance: str
     mode: str
-    flag_type: str = Field(description="과소비 | 장시간")
+    flag_type: Literal["과소비", "장시간"]
     detail: str
 
 
@@ -73,7 +75,7 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     hourly_data    = get_consumption_hourly(hh)
 
     mode_ref_data    = get_nilm_mode_references(hh)
-    recent_evt_data  = get_nilm_recent_events(hh)
+    recent_evt_data  = get_nilm_recent_events(hh, limit=30)
 
     raw_events     = events_data.get("raw", [])
     daily_summary  = breakdown_data.get("daily_summary", [])
@@ -81,12 +83,15 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     mode_refs_raw  = mode_ref_data.get("raw", {})
     recent_evts    = recent_evt_data.get("raw", [])
 
+    active_appliances = {item.get("appliance") for item in daily_summary if item.get("daily_kwh", 0) > 0}
+    filtered_refs = {k: v for k, v in mode_refs_raw.items() if k in active_appliances} if isinstance(mode_refs_raw, dict) else mode_refs_raw
+
     payload = {
         "events":           raw_events,
         "daily_summary":    daily_summary,
         "hourly_data":      hourly_raw,
-        "mode_references":  mode_refs_raw,
-        "recent_events":    recent_evts[:30],
+        "mode_references":  filtered_refs,
+        "recent_events":    recent_evts,
     }
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)

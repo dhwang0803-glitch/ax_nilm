@@ -36,6 +36,7 @@ INSERT INTO appliance_status_codes (status_code, label_en, label_ko, appliance_c
     -- 에어컨 (AC, nilm_type=3)
     (40, 'ac_fan',             '송풍',       'AC',            '에어컨 송풍 모드 — 저부하 팬 운전'),
     (41, 'ac_cooling',         '냉방',       'AC',            '에어컨 냉방 모드 — 압축기 가동 고부하'),
+    -- 42-44: 예약 (난방·제습·자동 등 추가 예정)
     -- 김치냉장고 (KIMCHI_FRIDGE, nilm_type=4)
     (45, 'kimchi_fan',         '팬',         'KIMCHI_FRIDGE', '김치냉장고 팬 동작'),
     (46, 'kimchi_intermit',    '단속냉각',   'KIMCHI_FRIDGE', '김치냉장고 단속냉각 — 간헐적 압축기 on/off'),

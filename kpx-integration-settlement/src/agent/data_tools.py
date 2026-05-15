@@ -9,9 +9,12 @@ Week 1: 3가구 mock 데이터로 구현. 실제 DB·NILM·KMA·KEPCO API 연결
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import timedelta
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # ─── Mock 데이터 ────────────────────────────────────────────────────────────────
 
@@ -1809,8 +1812,6 @@ def get_nilm_mode_references(household_id: str) -> dict[str, Any]:
                 (household_id,),
             )
             rows = cur.fetchall()
-            cur.close()
-            conn.close()
             if rows:
                 result: dict[str, dict] = {}
                 for code, name_ko, mode, energy, dur, cnt, sb_w, sb_dur in rows:
@@ -1827,8 +1828,10 @@ def get_nilm_mode_references(household_id: str) -> dict[str, Any]:
                 modes_count = sum(len(v["modes"]) for v in result.values())
                 summary = f"가전 {len(appliances)}종, 모드 {modes_count}개 레퍼런스 로드 (DB)"
                 return {"summary": summary, "raw": result, "source": "db"}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("get_nilm_mode_references DB fallback: %s", e)
+        finally:
+            conn.close()
 
     return {
         "summary": f"모드 레퍼런스 없음 (household_id={household_id})",
@@ -1879,8 +1882,6 @@ def get_nilm_recent_events(household_id: str, limit: int = 50) -> dict[str, Any]
                 (household_id, limit),
             )
             rows = cur.fetchall()
-            cur.close()
-            conn.close()
             if rows:
                 events = []
                 for start, end, appl, mode, energy, avg, peak, conf, ver in rows:
@@ -1900,8 +1901,10 @@ def get_nilm_recent_events(household_id: str, limit: int = 50) -> dict[str, Any]
                     f"{', '.join(appliances[:5])}). (DB)"
                 )
                 return {"summary": summary, "raw": events, "count": len(events), "source": "db"}
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("get_nilm_recent_events DB fallback: %s", e)
+        finally:
+            conn.close()
 
     return {
         "summary": f"최근 이벤트 없음 (household_id={household_id})",
