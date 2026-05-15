@@ -9,8 +9,7 @@ from fastapi import APIRouter
 logger = logging.getLogger(__name__)
 
 from src.agent.data_tools import get_anomaly_events, get_anomaly_log
-from src.agent.graph import InsightsLLMOutput, run_insights
-from src.agent.multi_agent.cashback_node import cashback_unit_rate
+from src.agent.schemas import InsightsLLMOutput
 from src.agent.multi_agent import run_multi_agent
 
 router = APIRouter()
@@ -48,19 +47,11 @@ def get_or_run_insights(hh: str) -> InsightsLLMOutput:
     """캐시에서 읽거나 없으면 멀티에이전트 호출 후 저장.
 
     run_multi_agent → Module 2·3 병렬 → Module 5 → InsightsLLMOutput.
-    실패 시 run_insights() 단일 에이전트로 폴백.
     savings_krw는 supervisor 내부에서 이미 처리됨.
     """
     cached = _get_cached(hh)
     if cached is None:
-        try:
-            cached = run_multi_agent(hh)
-        except Exception as e:
-            logger.warning("[multi_agent 실패] hh=%s error=%s — 단일 에이전트 폴백", hh, e)
-            cached = run_insights(hh)
-            unit_rate = cashback_unit_rate(hh)
-            for rec in cached.recommendations:
-                rec.savings_krw = round(rec.savings_kwh * unit_rate)
+        cached = run_multi_agent(hh)
         _set_cache(hh, cached)
     return cached
 

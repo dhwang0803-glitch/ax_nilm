@@ -2,9 +2,13 @@
 
 흐름:
   START
-    ├→ nilm_monitor (Module 2)  ─→ rag_retriever (Module 4) → report (Module 5) → END
-    └→ cashback (Module 3)      ─↗
-Module 2·3은 병렬 실행, 둘 다 완료 후 RAG 검색 → Module 5 실행.
+    ├→ nilm_monitor (Module 2)  ─────────────────────────→ report (Module 5) → END
+    ├→ cashback (Module 3) → rag_retriever (Module 4) ───↗
+    └→ weather (Module 6)  ───────────────────────────────↗
+
+nilm_monitor·cashback·weather 세 노드 동시 fan-out.
+cashback 완료 즉시 rag_retriever 시작 (nilm·weather와 병렬).
+report는 nilm_monitor + rag_retriever + weather 셋 다 완료 후 실행 (fan-in).
 """
 from __future__ import annotations
 
@@ -15,19 +19,23 @@ from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from ..schemas import InsightsLLMOutput
+from ..data_tools import get_household_profile
 from .cashback_node import cashback_node_fn, cashback_unit_rate
 from .nilm_monitor import nilm_monitor_node
 from .rag_node import rag_node
 from .report_agent import report_node
+from .weather_node import weather_node
 
 
 # ── 그래프 상태 ────────────────────────────────────────────────────────────────
 
 class MultiAgentState(TypedDict):
     household_id: str
+    household_profile: dict  # get_household_profile() raw 결과
     nilm_output: dict        # NilmMonitorOutput.model_dump()
     cashback_output: dict    # CashbackNodeOutput.model_dump()
     rag_context: list        # retrieve() 결과 청크 문자열 리스트
+    weather_output: dict     # get_weather() raw 결과
     final_output: dict       # InsightsLLMOutput.model_dump()
 
 
@@ -43,16 +51,21 @@ def _get_graph():
         builder.add_node("nilm_monitor",   nilm_monitor_node)
         builder.add_node("cashback",       cashback_node_fn)
         builder.add_node("rag_retriever",  rag_node)
+        builder.add_node("weather",        weather_node)
         builder.add_node("report",         report_node)
 
-        # Module 2·3 병렬 실행 (START에서 동시 fan-out)
+        # nilm_monitor·cashback·weather 동시 fan-out
         builder.add_edge(START, "nilm_monitor")
         builder.add_edge(START, "cashback")
+        builder.add_edge(START, "weather")
 
-        # 두 노드 완료 후 RAG 검색 (fan-in), 이후 report
-        builder.add_edge("nilm_monitor", "rag_retriever")
-        builder.add_edge("cashback",     "rag_retriever")
+        # cashback 완료 → RAG 즉시 시작 (nilm·weather와 병렬)
+        builder.add_edge("cashback", "rag_retriever")
+
+        # nilm_monitor + rag_retriever + weather 셋 다 완료 → report fan-in
+        builder.add_edge("nilm_monitor",  "report")
         builder.add_edge("rag_retriever", "report")
+        builder.add_edge("weather",       "report")
 
         builder.add_edge("report", END)
 
@@ -70,13 +83,17 @@ def run_multi_agent(household_id: str) -> InsightsLLMOutput:
     if not os.getenv("OPENAI_API_KEY"):
         raise EnvironmentError("OPENAI_API_KEY 환경변수 필요")
 
+    profile = get_household_profile(household_id)
+
     result: dict[str, Any] = _get_graph().invoke(
         {
-            "household_id":    household_id,
-            "nilm_output":     {},
-            "cashback_output": {},
-            "rag_context":     [],
-            "final_output":    {},
+            "household_id":      household_id,
+            "household_profile": profile.get("raw") or {},
+            "nilm_output":       {},
+            "cashback_output":   {},
+            "rag_context":       [],
+            "weather_output":    {},
+            "final_output":      {},
         }
     )
 

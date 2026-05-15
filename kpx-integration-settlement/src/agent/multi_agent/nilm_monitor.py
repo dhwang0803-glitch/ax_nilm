@@ -2,10 +2,13 @@
 
 이상 이벤트 수집 + 가전별 소비 패턴 파악.
 도구 호출은 항상 동일하므로 ReAct 없이 직접 호출 후 LLM으로 구조화.
+3개 도구(get_anomaly_events, get_hourly_appliance_breakdown, get_consumption_hourly)는
+ThreadPoolExecutor로 병렬 실행한다.
 """
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -53,9 +56,14 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     """Module 2: 이상 이벤트 + 가전 소비 패턴 수집 후 NilmMonitorOutput 반환."""
     hh = state["household_id"]
 
-    events_data    = get_anomaly_events(hh, status="active")
-    breakdown_data = get_hourly_appliance_breakdown(hh)
-    hourly_data    = get_consumption_hourly(hh)
+    # 3개 도구를 병렬 실행 — LLM 호출 전 데이터 수집 시간 단축
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_events    = pool.submit(get_anomaly_events, hh, status="active")
+        f_breakdown = pool.submit(get_hourly_appliance_breakdown, hh)
+        f_hourly    = pool.submit(get_consumption_hourly, hh)
+        events_data    = f_events.result()
+        breakdown_data = f_breakdown.result()
+        hourly_data    = f_hourly.result()
 
     raw_events   = events_data.get("raw", [])
     daily_summary = breakdown_data.get("daily_summary", [])
