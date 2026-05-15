@@ -150,6 +150,69 @@ flowchart LR
 | 10% 이상 ~ 20% 미만 | 80원/kWh |
 | 20% 이상 (30% 캡) | 100원/kWh |
 
+### 흐름 6. NILM 상태 모니터링 파이프라인 (2026-05-15~)
+
+단일 분전반 전력 → 가전별 분해 → 이상탐지 → AI 진단까지의 end-to-end 파이프라인.
+
+```mermaid
+flowchart TD
+    subgraph Ingest["1. 수신"]
+        Meter["분전반 ch01\n단일 전력 신호"]
+    end
+
+    subgraph NILM["2. NILM 엔진"]
+        Disagg["PerApplianceNILM\nCNN+TDA 하이브리드\n가전별 분해"]
+    end
+
+    subgraph Store["3. DB 적재"]
+        ASI["appliance_status_intervals\n(상태 구간 + 에너지)"]
+        AMR["appliance_mode_references\n(모드별 레퍼런스 통계)"]
+    end
+
+    subgraph Monitor["4. 상태 모니터링\n(anomaly-detection 브랜치)"]
+        TDA["TDA + 통계/패턴 탐지기\n모드 분류 · 이상 판정"]
+    end
+
+    subgraph GCS["5. GCS Bucket"]
+        LT["long_term.json\n모드별 레퍼런스\n(avg_energy, sample_count)"]
+        ST["short_term.json\n실시간 이벤트 로그\n(시각, 에너지, 피크W)"]
+    end
+
+    subgraph Agent["6. AI Agent 진단"]
+        Tools["data_tools\nDB 조회 + GCS 조회"]
+        NM["nilm_monitor_node\nbaseline vs actual 비교"]
+        Report["report_agent\n이상 진단 + 절감 권고"]
+    end
+
+    Meter -->|"30Hz 실시간"| Disagg
+    Disagg -->|"가전별 상태 전환"| ASI
+    Disagg -->|"모드 통계 갱신"| AMR
+    ASI -->|"가전별 전력 이력"| TDA
+    TDA -->|"long_term 레퍼런스"| LT
+    TDA -->|"short_term 이벤트"| ST
+    LT --> Tools
+    ST --> Tools
+    ASI --> Tools
+    AMR --> Tools
+    Tools --> NM
+    NM --> Report
+```
+
+**데이터 구조**:
+
+| 저장소 | 파일/테이블 | 내용 | 갱신 주기 |
+|--------|------------|------|----------|
+| GCS | `memory/long_term/{household_id}.json` | 가전별 모드 프로파일 (avg_energy_wh, avg_duration_min, sample_count) | 느림 — 샘플 축적 시 |
+| GCS | `memory/short_term/{household_id}.json` | 개별 이벤트 로그 (시각, 모드, 에너지, 평균W, 피크W) | 빠름 — 상태 전환마다 |
+| DB | `appliance_status_intervals` | NILM 엔진 출력 구간 (상태코드 + 에너지 + 신뢰도) | 실시간 |
+| DB | `appliance_mode_references` | 가구별 가전 모드 통계 레퍼런스 | 배치 갱신 |
+
+**AI Agent 진단 흐름**:
+1. `get_nilm_mode_references(household_id)` — GCS long_term → 모드별 baseline 취득
+2. `get_nilm_recent_events(household_id)` — GCS short_term → 최근 이벤트 취득
+3. `nilm_monitor_node` — baseline vs actual 비교 → 이상 판정
+4. `report_agent` — 이상 진단 + 절감 권고 생성
+
 ## 보안 경계 (REQ-007)
 
 - **PII 격리**: `household_pii` 테이블은 분석 역할이 직접 SELECT 불가. 관리자 전용 API 엔드포인트만 복호화 후 반환.
