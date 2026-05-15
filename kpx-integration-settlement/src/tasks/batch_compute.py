@@ -28,6 +28,8 @@ from typing import Any
 from celery import Celery
 from celery.schedules import crontab
 
+from src.agent import ontology
+
 BROKER  = os.getenv("CELERY_BROKER_URL",  "redis://localhost:6379/0")
 BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
@@ -45,21 +47,9 @@ app.conf.beat_schedule = {
 }
 
 
-# ── KEPCO 에너지캐시백 단가 테이블 ────────────────────────────────────────────────
-
-_CASHBACK_TIERS: list[tuple[float, float]] = [
-    (0.20, 100.0),
-    (0.10,  80.0),
-    (0.05,  60.0),
-    (0.03,  30.0),
-]
-
-_SAVINGS_CAP = 0.30  # 캐시백 산정 절감률 상한 (30%)
-
-
 def _tier_rate(savings_rate: float) -> float:
     """절감률 → 캐시백 단가(원/kWh). 미달 시 0."""
-    for threshold, rate in _CASHBACK_TIERS:
+    for threshold, rate in ontology.cashback_tiers():
         if savings_rate >= threshold:
             return rate
     return 0.0
@@ -361,7 +351,7 @@ def finalize_cashback_results(billing_month: str | None = None) -> dict[str, Any
                 savings_rate = 0.0
 
             rate_per_kwh      = _tier_rate(savings_rate)
-            effective_savings = (baseline_kwh or 0.0) * min(savings_rate, _SAVINGS_CAP)
+            effective_savings = (baseline_kwh or 0.0) * min(savings_rate, ontology.cashback_savings_cap())
             projected_krw     = int(effective_savings * rate_per_kwh)
 
             if savings_rate >= 0.03 and savings_rate > 0:
