@@ -1,7 +1,8 @@
-"""NILM 라벨 / 추론 결과 / ETL 이력 ORM.
+"""NILM 라벨 / 추론 결과 / ETL 이력 / 모드 레퍼런스 ORM.
 
 - ``ActivityInterval``           — AI Hub ground truth 라벨
 - ``ApplianceStatusInterval``    — CNN+TDA NILM 모델 출력 (구간 기반)
+- ``ApplianceModeReference``     — 가전 모드별 레퍼런스 통계 (GCS long_term DB 사본)
 - ``IngestionLog``               — ETL 파일별 적재 이력
 """
 from __future__ import annotations
@@ -17,8 +18,10 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
+    Numeric,
     SmallInteger,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -74,6 +77,9 @@ class ApplianceStatusInterval(Base):
     )
     confidence: Mapped[float | None] = mapped_column(Float)
     model_version: Mapped[str] = mapped_column(Text, nullable=False)
+    energy_wh: Mapped[float | None] = mapped_column(Numeric(10, 3))
+    avg_w: Mapped[float | None] = mapped_column(Numeric(10, 3))
+    peak_w: Mapped[float | None] = mapped_column(Numeric(10, 3))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -87,6 +93,34 @@ class ApplianceStatusInterval(Base):
             ["household_channels.household_id", "household_channels.channel_num"],
             ondelete="CASCADE",
         ),
+    )
+
+
+class ApplianceModeReference(Base):
+    """가전 모드별 레퍼런스 통계 — GCS long_term JSON 의 DB 사본."""
+
+    __tablename__ = "appliance_mode_references"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    household_id: Mapped[str] = mapped_column(
+        ForeignKey("households.household_id", ondelete="CASCADE"), nullable=False
+    )
+    appliance_code: Mapped[str] = mapped_column(
+        ForeignKey("appliance_types.appliance_code"), nullable=False
+    )
+    mode_name: Mapped[str] = mapped_column(Text, nullable=False)
+    avg_energy_wh: Mapped[float | None] = mapped_column(Numeric(10, 3))
+    avg_duration_min: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    standby_avg_w: Mapped[float | None] = mapped_column(Numeric(8, 3), server_default="0")
+    standby_avg_duration_min: Mapped[float | None] = mapped_column(Numeric(8, 2), server_default="0")
+    model_version: Mapped[str] = mapped_column(Text, nullable=False, server_default="tda-v1.0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("household_id", "appliance_code", "mode_name", "model_version"),
     )
 
 
