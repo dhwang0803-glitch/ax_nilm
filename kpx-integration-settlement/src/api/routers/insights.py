@@ -4,14 +4,15 @@ import os
 import time
 from collections import defaultdict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 from src.agent.data_tools import get_anomaly_events, get_anomaly_log
-from src.agent.graph import InsightsLLMOutput, run_insights
-from src.agent.multi_agent.cashback_node import cashback_unit_rate
+from src.agent.schemas import InsightsLLMOutput
 from src.agent.multi_agent import run_multi_agent
+from src.agent.multi_agent.supervisor import get_pending_review, resume_multi_agent
 
 router = APIRouter()
 
@@ -44,24 +45,17 @@ def _set_cache(hh: str, result: InsightsLLMOutput) -> None:
 
 
 
-def get_or_run_insights(hh: str) -> InsightsLLMOutput:
+def get_or_run_insights(hh: str) -> InsightsLLMOutput | None:
     """캐시에서 읽거나 없으면 멀티에이전트 호출 후 저장.
 
-    run_multi_agent → Module 2·3 병렬 → Module 5 → InsightsLLMOutput.
-    실패 시 run_insights() 단일 에이전트로 폴백.
+    고위험 이상 이벤트로 HITL 중단 시 None 반환 (pending 상태).
     savings_krw는 supervisor 내부에서 이미 처리됨.
     """
     cached = _get_cached(hh)
     if cached is None:
-        try:
-            cached = run_multi_agent(hh)
-        except Exception as e:
-            logger.warning("[multi_agent 실패] hh=%s error=%s — 단일 에이전트 폴백", hh, e)
-            cached = run_insights(hh)
-            unit_rate = cashback_unit_rate(hh)
-            for rec in cached.recommendations:
-                rec.savings_krw = round(rec.savings_kwh * unit_rate)
-        _set_cache(hh, cached)
+        cached = run_multi_agent(hh)
+        if cached is not None:
+            _set_cache(hh, cached)
     return cached
 
 
@@ -103,7 +97,17 @@ def insights_summary():
 
     confidence = max((e.get("confidence", 0) for e in raw_events), default=0)
 
-    result   = get_or_run_insights(hh)
+    result = get_or_run_insights(hh)
+    if result is None:
+        pending = get_pending_review(hh) or {}
+        raise HTTPException(
+            status_code=202,
+            detail={
+                "status":  "pending_review",
+                "message": pending.get("interrupt_data", {}).get("message", "인간 검토 대기 중"),
+                "anomaly_events": pending.get("interrupt_data", {}).get("anomaly_events", []),
+            },
+        )
     diag_map = {d.event_id: d for d in result.anomaly_diagnoses}
 
     anomaly_highlights = [
@@ -157,3 +161,29 @@ def insights_summary():
         "recommendations":   recs_out,
         "weeklyTrend":       weekly_trend,
     }
+
+
+# ── HITL 검토 승인/거부 ──────────────────────────────────────────────
+
+class ReviewDecision(BaseModel):
+    approved: bool
+    note: str = ""
+
+
+@router.post("/insights/review")
+def insights_review(body: ReviewDecision):
+    """보류 중인 이상 이벤트 검토 결과를 제출해 그래프를 재개한다.
+
+    approved=true  → report 생성 계속 진행
+    approved=false → 관리자 에스컬레이션 기록 후 report 생략
+    """
+    hh = os.getenv("DEFAULT_HH", "HH001")
+
+    if not get_pending_review(hh):
+        raise HTTPException(status_code=404, detail=f"보류 중인 검토 없음: {hh}")
+
+    decision = {"approved": body.approved, "auto": False, "note": body.note}
+    result = resume_multi_agent(hh, decision)
+    _set_cache(hh, result)
+
+    return {"status": "resumed", "approved": body.approved}

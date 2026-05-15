@@ -1,0 +1,117 @@
+# ax_nilm 도메인 온톨로지
+# 가전 분류, 캐시백 정책, 안전 규칙, 계절 임계값을 단일 YAML로 관리.
+# cashback_node.py · evaluate_agent.py · report_agent.py 가 이 파일을 공유함.
+
+# ── 캐시백 정책 (KEPCO 에너지캐시백) ─────────────────────────────────────────
+cashback_policy:
+  tiers:
+    # 절감률 임계값(threshold) 이상이면 해당 단가(rate_krw_per_kwh) 적용
+    - threshold: 0.20
+      rate_krw_per_kwh: 100.0
+    - threshold: 0.10
+      rate_krw_per_kwh: 80.0
+    - threshold: 0.05
+      rate_krw_per_kwh: 60.0
+    - threshold: 0.03
+      rate_krw_per_kwh: 30.0
+  fallback_rate_krw_per_kwh: 50.0   # 이력 없을 때 기본 단가
+  max_savings_cap: 0.30             # 정산 상한 (기준선 대비 30%)
+
+# ── 계절 임계값 ───────────────────────────────────────────────────────────────
+seasonal:
+  hot_threshold_c: 23.0    # °C 이상 → 냉방 시즌
+  cold_threshold_c: 12.0   # °C 이하 → 난방 시즌
+
+# ── 가전 분류 ─────────────────────────────────────────────────────────────────
+appliances:
+  # 항상 켜 두어야 하는 필수 가전 — 사용 중단 권고 금지
+  essential:
+    names:
+      - 냉장고
+      - 김치냉장고
+      - 의료기기
+      - 산소발생기
+    forbidden_verbs:
+      - 중단
+      - 차단
+      - 꺼
+      - 끄
+      - 미사용
+
+  # 냉방 가전 (hot_threshold 이상 시즌에만 권고 방향 확인)
+  cooling:
+    names:
+      - 에어컨
+      - 선풍기
+
+  # 난방 가전 (cold_threshold 이하 시즌에만 권고 방향 확인)
+  heating:
+    names:
+      - 전기장판
+      - 온수매트
+      - 전열기
+      - 히터
+      - 전기히터
+
+  # 권고 가이드라인 (report_agent 시스템 프롬프트 생성에 사용)
+  guidance:
+    - names: [에어컨]
+      direction: 설정 조정
+      template: "온도 1°C 조정"
+    - names: [전기장판, 온수매트]
+      direction: 설정 조정
+      template: "온도 단계 낮추기"
+    - names: [인덕션]
+      direction: 설정 조정
+      template: "화력 단계 낮추기"
+    - names: [전기포트]
+      direction: 효율 사용
+      template: "필요한 양만"
+    - names: [전기밥솥]
+      direction: 효율 사용
+      template: "취사 예약 활용"
+    - names: [전기다리미]
+      direction: 효율 사용
+      template: "모아서 한 번에"
+    - names: [TV, 컴퓨터]
+      direction: 절전 설정
+      template: "절전 모드·타이머"
+    - names: [선풍기]
+      direction: 절전 설정
+      template: "풍속 낮추기·타이머"
+    - names: [공기청정기]
+      direction: 절전 설정
+      template: "자동·취침 모드"
+    - names: [냉장고, 김치냉장고]
+      direction: 상시 가동 점검
+      template: "온도 최적화·도어·코일 점검"
+    - names: [무선공유기, 셋톱박스]
+      direction: 미사용 시 차단
+      template: "장시간 미사용 시 전원 차단"
+
+# ── 전역 금지 표현 (action·title 공통) ───────────────────────────────────────
+safety:
+  forbidden_phrases:
+    - 사용 중단
+    - 사용하지 마
+    - 끄세요
+    - 꺼두세요
+    - 미사용 권고
+    - 사용 금지
+    - 작동 중지
+    - 전원 끄기
+
+# ── 효율 조정 방향 키워드 (계절 위반 판단 제외 키워드) ────────────────────────
+evaluation:
+  efficiency_keywords:
+    - 낮추기
+    - 줄이기
+    - 절전
+    - 조정
+    - 타이머
+    - 설정
+    - 최적화
+    - 점검
+    - 단계
+    - 예약
+    - 모아서

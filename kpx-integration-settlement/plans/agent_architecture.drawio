@@ -1,0 +1,87 @@
+<mxfile host="65bd71144e">
+    <diagram name="ax_nilm 멀티에이전트 아키텍처" id="ma-arch-v3">
+        <mxGraphModel dx="520" dy="303" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="api_endpoint" value="&lt;b&gt;/api/insights/summary&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;FastAPI · insights.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="30" width="260" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="supervisor" value="&lt;b&gt;run_multi_agent()&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot;&gt;LangGraph StateGraph · supervisor.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#888888;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="120" width="260" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="parallel_bg" value="병렬 실행 (nilm_monitor ‖ cashback→RAG ‖ weather)" style="text;html=1;strokeColor=#aaaaaa;fillColor=#f9f9f9;align=left;verticalAlign=top;spacingLeft=8;rounded=1;dashed=1;fontSize=10;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="35" y="210" width="1080" height="300" as="geometry"/>
+                </mxCell>
+                <mxCell id="nilm_monitor" value="&lt;b&gt;nilm_monitor&lt;/b&gt;&lt;br&gt;Module 2  ·  LLM ✅&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;도구 3개 병렬 수집 후 LLM 구조화&lt;br&gt;gpt-4o-mini structured output&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="240" width="210" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="cashback" value="&lt;b&gt;cashback&lt;/b&gt;&lt;br&gt;Module 3  ·  LLM ❌&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;기준선·절감률·캐시백 산출&lt;br&gt;Python 계산 전용&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="425" y="240" width="210" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="weather" value="&lt;b&gt;weather&lt;/b&gt;&lt;br&gt;Module 6  ·  LLM ❌&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;최근 7일 기상 조회&lt;br&gt;household_daily_env DB&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="870" y="240" width="210" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="rag_retriever" value="&lt;b&gt;rag_retriever&lt;/b&gt;&lt;br&gt;Module 4  ·  LLM ❌&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;pgvector 유사도 검색 (k=3)&lt;br&gt;에너지캐시백 지식베이스 7개 문서&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="425" y="370" width="210" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="fanin_label" value="fan-in" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontSize=9;fontStyle=2;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="516" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="report" value="&lt;b&gt;report&lt;/b&gt;&lt;br&gt;Module 5  ·  LLM ✅&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;이상 진단 + 절감 권고 생성&lt;br&gt;gpt-4o-mini structured output&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="400" y="540" width="260" height="85" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#888888;" parent="1" vertex="1">
+                    <mxGeometry x="100" y="541" width="230" height="84" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend_title" value="&lt;b&gt;범례&lt;/b&gt;" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="132" y="549" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="l1" value="" style="rounded=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="1" vertex="1">
+                    <mxGeometry x="132" y="575" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="l1t" value="LLM 에이전트" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="157" y="575" width="130" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="l2" value="" style="rounded=1;fillColor=#d5e8d4;strokeColor=#82b366;" parent="1" vertex="1">
+                    <mxGeometry x="132" y="601" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="l2t" value="비LLM 에이전트 (계산/검색/조회)" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="157" y="601" width="180" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_api_sup" style="edgeStyle=orthogonalEdgeStyle;" parent="1" source="api_endpoint" target="supervisor" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_sup_nilm" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="supervisor" target="nilm_monitor" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="185" y="195"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_sup_cb" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="supervisor" target="cashback" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_sup_wx" style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="supervisor" target="weather" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="975" y="195"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_cb_rag" style="edgeStyle=orthogonalEdgeStyle;" parent="1" source="cashback" target="rag_retriever" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_nilm_rep" style="edgeStyle=orthogonalEdgeStyle;" parent="1" source="nilm_monitor" target="report" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_rag_rep" style="edgeStyle=orthogonalEdgeStyle;" parent="1" source="rag_retriever" target="report" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_wx_rep" style="edgeStyle=orthogonalEdgeStyle;" parent="1" source="weather" target="report" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
