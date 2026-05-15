@@ -16,6 +16,8 @@ from ..data_tools import (
     get_anomaly_events,
     get_consumption_hourly,
     get_hourly_appliance_breakdown,
+    get_nilm_mode_references,
+    get_nilm_recent_events,
 )
 
 
@@ -28,11 +30,20 @@ class TopConsumer(BaseModel):
     share_pct: float = Field(ge=0.0, le=100.0)
 
 
+class AnomalyFlag(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    appliance: str
+    mode: str
+    flag_type: str = Field(description="과소비 | 장시간")
+    detail: str
+
+
 class _NilmLLMOutput(BaseModel):
-    """LLM 구조화 출력 전용 — anomaly_events는 코드에서 직접 주입."""
+    """LLM 구조화 출력 전용 — anomaly_events·mode_references·recent_events는 코드에서 직접 주입."""
     model_config = ConfigDict(extra="forbid")
     top_consumers: list[TopConsumer]
     peak_hours: list[int]
+    anomaly_flags: list[AnomalyFlag] = Field(default_factory=list)
 
 
 # ── 시스템 프롬프트 ─────────────────────────────────────────────────────────────
@@ -43,28 +54,39 @@ _SYSTEM = """\
 
 top_consumers: daily_summary에서 daily_kwh 상위 5개 이하 추출.
   - daily_kwh 0.0이면 제외.
+  - mode_references가 있으면 해당 가전의 baseline avg_energy_wh와 비교해 초과율 기록.
 peak_hours: hourly_data에서 kwh 상위 3개 시간대의 hour 값 (정수 리스트).
+anomaly_flags: recent_events에서 mode_references baseline 대비 비정상 패턴 요약 (있을 때만).
+  - energy_wh가 baseline avg_energy_wh의 1.5배 이상이면 "과소비" 플래그.
+  - duration이 baseline avg_duration_min의 2배 이상이면 "장시간" 플래그.
 """
 
 
 # ── 노드 함수 ──────────────────────────────────────────────────────────────────
 
 def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Module 2: 이상 이벤트 + 가전 소비 패턴 수집 후 NilmMonitorOutput 반환."""
+    """Module 2: 이상 이벤트 + 가전 소비 패턴 + GCS baseline/이벤트 수집."""
     hh = state["household_id"]
 
     events_data    = get_anomaly_events(hh, status="active")
     breakdown_data = get_hourly_appliance_breakdown(hh)
     hourly_data    = get_consumption_hourly(hh)
 
-    raw_events   = events_data.get("raw", [])
-    daily_summary = breakdown_data.get("daily_summary", [])
-    hourly_raw   = hourly_data.get("raw", [])
+    mode_ref_data    = get_nilm_mode_references(hh)
+    recent_evt_data  = get_nilm_recent_events(hh)
+
+    raw_events     = events_data.get("raw", [])
+    daily_summary  = breakdown_data.get("daily_summary", [])
+    hourly_raw     = hourly_data.get("raw", [])
+    mode_refs_raw  = mode_ref_data.get("raw", {})
+    recent_evts    = recent_evt_data.get("raw", [])
 
     payload = {
-        "events":       raw_events,
-        "daily_summary": daily_summary,
-        "hourly_data":  hourly_raw,
+        "events":           raw_events,
+        "daily_summary":    daily_summary,
+        "hourly_data":      hourly_raw,
+        "mode_references":  mode_refs_raw,
+        "recent_events":    recent_evts[:30],
     }
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
@@ -78,5 +100,7 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     output = result.model_dump()
-    output["anomaly_events"] = raw_events  # raw 이벤트 직접 주입
+    output["anomaly_events"]   = raw_events
+    output["mode_references"]  = mode_refs_raw
+    output["recent_events"]    = recent_evts
     return {"nilm_output": output}
