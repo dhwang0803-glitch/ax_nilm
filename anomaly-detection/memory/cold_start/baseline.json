@@ -1,0 +1,113 @@
+{
+  "김치냉장고": {
+    "팬": {
+      "avg_energy_wh": 0.391,
+      "avg_duration_min": 0.7,
+      "sample_count": 378
+    },
+    "약냉": {
+      "avg_energy_wh": 0.31,
+      "avg_duration_min": 0.6,
+      "sample_count": 411
+    },
+    "강냉": {
+      "avg_energy_wh": 1.114,
+      "avg_duration_min": 1.5,
+      "sample_count": 52
+    }
+  },
+  "전기밥솥": {
+    "보온": {
+      "avg_energy_wh": 2.939,
+      "avg_duration_min": 0.8,
+      "sample_count": 288
+    },
+    "취사": {
+      "avg_energy_wh": 6.619,
+      "avg_duration_min": 1.2,
+      "sample_count": 300
+    }
+  },
+  "전기장판/담요": {
+    "약": {
+      "avg_energy_wh": 0.769,
+      "avg_duration_min": 0.7,
+      "sample_count": 376
+    },
+    "강": {
+      "avg_energy_wh": 0.807,
+      "avg_duration_min": 0.8,
+      "sample_count": 386
+    }
+  },
+  "에어컨": {
+    "냉방": {
+      "avg_energy_wh": 10.953,
+      "avg_duration_min": 28.8,
+      "sample_count": 18
+    },
+    "예열": {
+      "avg_energy_wh": 24.101,
+      "avg_duration_min": 2.9,
+      "sample_count": 17
+    }
+  },
+  "제습기": {
+    "송풍": {
+      "avg_energy_wh": 2.179,
+      "avg_duration_min": 4.4,
+      "sample_count": 19
+    },
+    "제습": {
+      "avg_energy_wh": 102.342,
+      "avg_duration_min": 21.1,
+      "sample_count": 23
+    }
+  },
+  "세탁기": {
+    "헹굼": {
+      "avg_energy_wh": 1.296,
+      "avg_duration_min": 2.3,
+      "sample_count": 120
+    },
+    "세탁": {
+      "avg_energy_wh": 1.155,
+      "avg_duration_min": 0.8,
+      "sample_count": 179
+    },
+    "탈수": {
+      "avg_energy_wh": 1.841,
+      "avg_duration_min": 0.8,
+      "sample_count": 193
+    }
+  },
+  "일반 냉장고": {
+    "냉각": {
+      "avg_energy_wh": 0.59,
+      "avg_duration_min": 0.5,
+      "sample_count": 360
+    },
+    "장시간 냉각": {
+      "avg_energy_wh": 1.31,
+      "avg_duration_min": 1.1,
+      "sample_count": 350
+    }
+  },
+  "식기세척기/건조기": {
+    "예비헹굼": {
+      "avg_energy_wh": 27.638,
+      "avg_duration_min": 5.0,
+      "sample_count": 243
+    },
+    "세척": {
+      "avg_energy_wh": 13.546,
+      "avg_duration_min": 1.6,
+      "sample_count": 209
+    },
+    "열풍건조": {
+      "avg_energy_wh": 17.003,
+      "avg_duration_min": 2.0,
+      "sample_count": 350
+    }
+  }
+}

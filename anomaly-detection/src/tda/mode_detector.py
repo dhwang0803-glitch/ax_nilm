@@ -19,13 +19,11 @@ except ImportError:
     _GUDHI_AVAILABLE = False
 
 TDA_APPLIANCES: frozenset[str] = frozenset({
-    "의류건조기",
     "전기밥솥",
     "식기세척기/건조기",
     "세탁기",
     "에어컨",
     "전기장판/담요",
-    "온수매트",
     "제습기",
     "일반 냉장고",
     "김치냉장고",
@@ -37,12 +35,15 @@ APPLIANCE_MAX_W: dict[str, float] = {
     "김치냉장고":        200.0,
     "제습기":            500.0,
     "세탁기":            700.0,
-    "의류건조기":        2000.0,
     "일반 냉장고":       400.0,
     "식기세척기/건조기": 2000.0,
-    "온수매트":          500.0,
     "전기밥솥":          1500.0,
     "전기장판/담요":     200.0,
+}
+
+# 가전별 TDA 윈도우 크기 오버라이드 — build_tda_references.ipynb와 반드시 동일하게 유지
+WINDOW_SIZE_OVERRIDE: dict[str, int] = {
+    "식기세척기/건조기": 2048,  # 68s — 세척 사이클 전체 포착
 }
 
 _EMBED_DIM = 3
@@ -94,9 +95,8 @@ def compute_fingerprint(signal: np.ndarray, max_w: float) -> list[float] | None:
         return None
 
     if len(norm) > WINDOW_SIZE:
-        mid = len(norm) // 2
-        half = WINDOW_SIZE // 2
-        norm = norm[mid - half: mid + half]
+        step = len(norm) // WINDOW_SIZE
+        norm = norm[::step][:WINDOW_SIZE]
 
     cloud = _time_delay_embed(norm)
     if len(cloud) < _MIN_POINTS:

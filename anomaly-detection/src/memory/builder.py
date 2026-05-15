@@ -18,15 +18,16 @@ from anomaly_detection.src.tda.mode_detector import (
     APPLIANCE_MAX_W,
     TDA_APPLIANCES,
     WINDOW_SIZE,
-    classify_mode_attention,
+    WINDOW_SIZE_OVERRIDE,
+    classify_mode,
     compute_fingerprint,
     load_references,
 )
 
 _STANDBY_MIN_W = 1.0
 _STANDBY_MIN_MIN = 30.0
-_ENTROPY_FALLBACK = 1.0
 _HYSTERESIS_W = 10.0
+_SIMPLE_MODE_APPLIANCES: frozenset[str] = frozenset({"공기청정기", "선풍기"})  # W 차이 노이즈 수준 → '작동' 단일 반환
 
 # 코드에서 사용하는 가전명 → thresholds.yaml 키 매핑
 _THRESHOLD_KEY_MAP: dict[str, str] = {
@@ -169,21 +170,21 @@ class ShortTermBuilder:
         work = group.copy()
 
         max_w = APPLIANCE_MAX_W.get(appliance, 1.0)
+        win = WINDOW_SIZE_OVERRIDE.get(appliance, WINDOW_SIZE)
+        stride = win * 3 if appliance in ALWAYS_ON else win  # ALWAYS_ON은 3배 stride — 연속 동일 모드 스킵
         signals = work["power_w"].values
         n = len(signals)
 
-        # 윈도우별 TDA 분류 — (start_idx, end_idx, mode, entropy, fingerprint)
-        labeled: list[tuple[int, int, str, float | None, list | None]] = []
-        for start in range(0, n, WINDOW_SIZE):
-            end = min(start + WINDOW_SIZE, n)
+        labeled: list[tuple[int, int, str]] = []
+        for start in range(0, n, stride):
+            end = min(start + win, n)
             if end - start < 50:   # _MIN_POINTS 미만 꼬리 윈도우 스킵
                 break
             fp = compute_fingerprint(signals[start:end], max_w)
-            mode, entropy = classify_mode_attention(appliance, fp, self._references)
-            if mode is None or (entropy is not None and entropy > _ENTROPY_FALLBACK):
+            mode = classify_mode(appliance, fp, self._references)
+            if mode is None:
                 mode = "unknown"
-                entropy = None
-            labeled.append((start, end, mode, entropy, fp))
+            labeled.append((start, end, mode))
 
         if not labeled:
             return []
@@ -194,13 +195,13 @@ class ShortTermBuilder:
         for i in range(1, len(labeled)):
             if labeled[i][2] != labeled[seg_start][2]:
                 events.append(self._make_tda_event(
-                    appliance, work, signals, labeled[seg_start:i],
+                    appliance, work, labeled[seg_start:i],
                     standby if seg_start == 0 else None,
                 ))
                 seg_start = i
         if labeled[seg_start:]:
             events.append(self._make_tda_event(
-                appliance, work, signals, labeled[seg_start:],
+                appliance, work, labeled[seg_start:],
                 standby if seg_start == 0 else None,
             ))
 
@@ -210,8 +211,7 @@ class ShortTermBuilder:
         self,
         appliance: str,
         work: pd.DataFrame,
-        signals: np.ndarray,
-        labeled: list[tuple[int, int, str, float | None, list | None]],
+        labeled: list[tuple[int, int, str]],
         standby: StandbyEvent | None,
     ) -> ShortTermEvent:
         start_row = labeled[0][0]
@@ -225,23 +225,14 @@ class ShortTermBuilder:
             else 1 / (30 * 3600)
         )
 
-        mode = labeled[0][2]
-        entropies = [e for _, _, _, e, _ in labeled if e is not None]
-        mode_confidence = float(np.mean(entropies)) if entropies else None
-
-        # 대표 fingerprint: 병합 구간 중앙 윈도우 (루프에서 계산한 값 재사용)
-        fingerprint = labeled[len(labeled) // 2][4]
-
         return ShortTermEvent(
             appliance=appliance,
-            mode=mode,
+            mode=labeled[0][2],
             started_at=segment.index[0].to_pydatetime(),
             duration_min=round(len(segment) * sample_h * 60, 1),
             energy_wh=round(float(segment["power_w"].sum() * sample_h), 3),
             avg_w=round(float(segment["power_w"].mean()), 2),
             peak_w=round(float(segment["power_w"].max()), 2),
-            tda_fingerprint=fingerprint,
-            mode_confidence=mode_confidence,
             standby=standby,
         )
 
@@ -259,6 +250,11 @@ class ShortTermBuilder:
             work = group[group["power_w"] >= on_thr].copy()
             if work.empty:
                 return []
+
+        if appliance in _SIMPLE_MODE_APPLIANCES:
+            work = work.copy()
+            work["mode"] = "작동"
+            return [self._make_wrange_event(appliance, work, standby)]
 
         smoothed_w = work["power_w"].rolling("1s", min_periods=1).mean().values
         key = _THRESHOLD_KEY_MAP.get(appliance, appliance)
@@ -300,7 +296,5 @@ class ShortTermBuilder:
             energy_wh=round(float(segment["power_w"].sum() * sample_h), 3),
             avg_w=round(float(segment["power_w"].mean()), 2),
             peak_w=round(float(segment["power_w"].max()), 2),
-            tda_fingerprint=None,
-            mode_confidence=None,
             standby=standby,
         )
