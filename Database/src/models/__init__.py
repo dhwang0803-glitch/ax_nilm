@@ -13,7 +13,7 @@ from .household import (
     HouseholdPII,
 )
 from .power import PowerEfficiency30Min, PowerHour, PowerMinute
-from .nilm import ActivityInterval, ApplianceStatusInterval, IngestionLog
+from .nilm import ActivityInterval, ApplianceModeReference, ApplianceStatusInterval, IngestionLog
 from .dr import DRApplianceSavings, DREvent, DRResult
 
 __all__ = [
@@ -34,6 +34,7 @@ __all__ = [
     "PowerEfficiency30Min",
     # nilm
     "ActivityInterval",
+    "ApplianceModeReference",
     "ApplianceStatusInterval",
     "IngestionLog",
     # dr

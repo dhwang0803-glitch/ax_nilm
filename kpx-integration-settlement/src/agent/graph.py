@@ -26,6 +26,8 @@ from .data_tools import (
     get_forecast,
     get_hourly_appliance_breakdown,
     get_household_profile,
+    get_nilm_mode_references,
+    get_nilm_recent_events,
     get_tariff_info,
     get_weather,
 )
@@ -76,6 +78,8 @@ ALL_TOOLS = [_safe_tool(f) for f in (
     get_anomaly_log,
     get_household_profile,
     get_dashboard_summary,
+    get_nilm_mode_references,
+    get_nilm_recent_events,
 )]
 
 # ── 시스템 프롬프트 ───────────────────────────────────────────────────────────
