@@ -9,9 +9,12 @@ Week 1: 3가구 mock 데이터로 구현. 실제 DB·NILM·KMA·KEPCO API 연결
 """
 from __future__ import annotations
 
+import logging
 import os
 from datetime import timedelta
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # ─── Mock 데이터 ────────────────────────────────────────────────────────────────
 
@@ -1773,6 +1776,144 @@ def get_hourly_appliance_breakdown(household_id: str, date: str = "2026-04-27") 
     return {"summary": summary, "raw": result, "appliances": appliances, "daily_summary": daily_summary}
 
 
+# ─── NILM 모드 레퍼런스 / 최근 이벤트 (GCS → DB → mock 폴백) ────────────────────
+
+def get_nilm_mode_references(household_id: str) -> dict[str, Any]:
+    """가전별 모드 레퍼런스(baseline) 조회 — GCS long_term → DB → mock 순 폴백.
+
+    각 가전의 정상 운전 모드별 평균 에너지·지속시간·대기전력 기준값.
+    Agent가 현재 소비와 비교해 이상 여부를 판단하는 데 사용.
+    """
+    from . import gcs_memory
+
+    gcs_data = gcs_memory.get_long_term(household_id)
+    if gcs_data:
+        appliances = list(gcs_data.keys()) if isinstance(gcs_data, dict) else []
+        modes_count = sum(
+            len(v.get("modes", {})) for v in gcs_data.values()
+        ) if isinstance(gcs_data, dict) else 0
+        summary = f"가전 {len(appliances)}종, 모드 {modes_count}개 레퍼런스 로드 (GCS)"
+        return {"summary": summary, "raw": gcs_data, "source": "gcs"}
+
+    conn = _get_db_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT r.appliance_code, t.type_name_ko, r.mode_name,
+                       r.avg_energy_wh, r.avg_duration_min, r.sample_count,
+                       r.standby_avg_w, r.standby_avg_duration_min
+                FROM appliance_mode_references r
+                JOIN appliance_types t ON t.appliance_code = r.appliance_code
+                WHERE r.household_id = %s
+                ORDER BY r.appliance_code, r.mode_name
+                """,
+                (household_id,),
+            )
+            rows = cur.fetchall()
+            if rows:
+                result: dict[str, dict] = {}
+                for code, name_ko, mode, energy, dur, cnt, sb_w, sb_dur in rows:
+                    if name_ko not in result:
+                        result[name_ko] = {"appliance": name_ko, "appliance_code": code, "modes": {}}
+                    result[name_ko]["modes"][mode] = {
+                        "avg_energy_wh": float(energy) if energy else None,
+                        "avg_duration_min": float(dur) if dur else None,
+                        "sample_count": cnt,
+                        "standby_avg_w": float(sb_w) if sb_w else None,
+                        "standby_avg_duration_min": float(sb_dur) if sb_dur else None,
+                    }
+                appliances = list(result.keys())
+                modes_count = sum(len(v["modes"]) for v in result.values())
+                summary = f"가전 {len(appliances)}종, 모드 {modes_count}개 레퍼런스 로드 (DB)"
+                return {"summary": summary, "raw": result, "source": "db"}
+        except Exception as e:
+            logger.warning("get_nilm_mode_references DB fallback: %s", e)
+        finally:
+            conn.close()
+
+    return {
+        "summary": f"모드 레퍼런스 없음 (household_id={household_id})",
+        "raw": {},
+        "source": "none",
+    }
+
+
+def get_nilm_recent_events(household_id: str, limit: int = 50) -> dict[str, Any]:
+    """최근 NILM 이벤트 로그 조회 — GCS short_term → DB → mock 순 폴백.
+
+    상태 모니터링 모델이 감지한 최근 가전 사용 이벤트 목록.
+    Agent가 baseline(long_term)과 비교해 비정상 패턴을 진단하는 데 사용.
+    """
+    from . import gcs_memory
+
+    gcs_data = gcs_memory.get_short_term(household_id)
+    if gcs_data and isinstance(gcs_data, list):
+        events = gcs_data[:limit]
+        appliances = list({e.get("appliance", "unknown") for e in events})
+        summary = (
+            f"최근 이벤트 {len(events)}건 (가전 {len(appliances)}종: "
+            f"{', '.join(appliances[:5])}). (GCS)"
+        )
+        return {"summary": summary, "raw": events, "count": len(events), "source": "gcs"}
+
+    conn = _get_db_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT si.start_ts, si.end_ts,
+                       t.type_name_ko AS appliance,
+                       sc.label_ko AS mode,
+                       si.energy_wh, si.avg_w, si.peak_w,
+                       si.confidence, si.model_version
+                FROM appliance_status_intervals si
+                JOIN household_channels hc
+                    ON hc.household_id = si.household_id
+                   AND hc.channel_num = si.channel_num
+                JOIN appliance_types t ON t.appliance_code = hc.appliance_code
+                JOIN appliance_status_codes sc ON sc.status_code = si.status_code
+                WHERE si.household_id = %s
+                ORDER BY si.start_ts DESC
+                LIMIT %s
+                """,
+                (household_id, limit),
+            )
+            rows = cur.fetchall()
+            if rows:
+                events = []
+                for start, end, appl, mode, energy, avg, peak, conf, ver in rows:
+                    events.append({
+                        "appliance": appl,
+                        "mode": mode,
+                        "started_at": start.isoformat() if start else None,
+                        "ended_at": end.isoformat() if end else None,
+                        "energy_wh": float(energy) if energy else None,
+                        "avg_w": float(avg) if avg else None,
+                        "peak_w": float(peak) if peak else None,
+                        "confidence": float(conf) if conf else None,
+                    })
+                appliances = list({e["appliance"] for e in events})
+                summary = (
+                    f"최근 이벤트 {len(events)}건 (가전 {len(appliances)}종: "
+                    f"{', '.join(appliances[:5])}). (DB)"
+                )
+                return {"summary": summary, "raw": events, "count": len(events), "source": "db"}
+        except Exception as e:
+            logger.warning("get_nilm_recent_events DB fallback: %s", e)
+        finally:
+            conn.close()
+
+    return {
+        "summary": f"최근 이벤트 없음 (household_id={household_id})",
+        "raw": [],
+        "count": 0,
+        "source": "none",
+    }
+
+
 # ─── OpenAI function calling 스키마 ─────────────────────────────────────────────
 
 TOOL_SCHEMAS: list[dict] = [
@@ -2016,6 +2157,54 @@ TOOL_SCHEMAS: list[dict] = [
                         "type": "string",
                         "description": "조회 날짜 (YYYY-MM-DD 형식)",
                         "default": "2026-04-27",
+                    },
+                },
+                "required": ["household_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nilm_mode_references",
+            "description": (
+                "가전별 모드 레퍼런스(baseline)를 조회합니다. "
+                "각 가전의 정상 운전 모드별 평균 에너지·지속시간·대기전력 기준값을 반환합니다. "
+                "현재 소비와 비교해 이상 여부를 판단할 때 사용합니다. "
+                "'에어컨 정상 소비량이 얼마야?', '세탁기 모드별 기준이 뭐야?' 질문에 사용합니다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "household_id": {
+                        "type": "string",
+                        "description": "익명화된 가구 식별자",
+                    },
+                },
+                "required": ["household_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nilm_recent_events",
+            "description": (
+                "NILM 상태 모니터링 모델이 감지한 최근 가전 사용 이벤트를 조회합니다. "
+                "가전별 모드·에너지·지속시간을 포함하며, baseline 대비 비정상 패턴을 진단할 때 사용합니다. "
+                "'최근에 어떤 가전이 작동했어?', '에어컨 최근 사용 패턴 보여줘' 질문에 사용합니다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "household_id": {
+                        "type": "string",
+                        "description": "익명화된 가구 식별자",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "조회할 최근 이벤트 수 (기본값 50)",
+                        "default": 50,
                     },
                 },
                 "required": ["household_id"],

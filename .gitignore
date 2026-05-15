@@ -235,5 +235,8 @@ nilm-engine/experiments/
 *.key
 credentials.json
 
+# NILM 상태 모니터링 로컬 메모리 (GCS 폴백용 데모 데이터)
+kpx-integration-settlement/memory/
+
 # Team-internal demo guide (Google Drive 공유용 — git 추적 제외)
 DEMO_GUIDE.md
