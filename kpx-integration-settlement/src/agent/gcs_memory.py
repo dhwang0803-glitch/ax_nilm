@@ -22,7 +22,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _BUCKET = os.getenv("NILM_MEMORY_BUCKET")
-_LOCAL_DIR = os.getenv("NILM_MEMORY_LOCAL", "./memory")
+_LOCAL_DIR = os.getenv("NILM_MEMORY_LOCAL", ".")
 
 _HH_ID_RE = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
