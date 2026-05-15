@@ -6,7 +6,14 @@ Module 2(NILM 모니터링) + Module 3(캐시백 계산) 결과를 받아
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from typing import Any
+
+
+def _json_default(obj):
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -98,7 +105,7 @@ def report_node(state: dict[str, Any]) -> dict[str, Any]:
         .with_structured_output(InsightsLLMOutput)
         .invoke([
             SystemMessage(_build_system_prompt()),
-            HumanMessage(content=json.dumps(payload, ensure_ascii=False)),
+            HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=_json_default)),
         ])
     )
 
