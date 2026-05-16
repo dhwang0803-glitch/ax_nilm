@@ -70,6 +70,8 @@ _DEFAULT_TYPE = "C"
 
 # ── 사전 필터링 상수 ──────────────────────────────────────────────────────────
 
+_MAIN_BREAKER: frozenset[str] = frozenset({"메인 분전반", "메인분전반", "MAIN"})
+
 _STANDBY_W_THRESHOLD = 5.0
 _MIN_DURATION_FLOOR_MIN = 5.0
 _MIN_BASELINE_SAMPLES = 30
@@ -231,6 +233,16 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     hourly_raw     = hourly_data.get("raw", [])
     mode_refs_raw  = mode_ref_data.get("raw", {})
     recent_evts    = recent_evt_data.get("raw", [])
+
+    # before_kw가 명시적으로 0(평소 미사용 → 신규 사용)일 때만 제외.
+    # 필드 자체가 없는 케이스(_db_anomaly_events 출력)는 통과해야 진단 대상에 포함됨.
+    raw_events = [e for e in raw_events if not ("before_kw" in e and (e.get("before_kw") or 0) == 0)]
+    # 메인 분전반은 집계 채널 — 모든 가전 분석 경로에서 제외
+    raw_events = [e for e in raw_events if e.get("appliance") not in _MAIN_BREAKER]
+    daily_summary = [item for item in daily_summary if item.get("appliance") not in _MAIN_BREAKER]
+    recent_evts = [e for e in recent_evts if e.get("appliance") not in _MAIN_BREAKER]
+    if isinstance(mode_refs_raw, dict):
+        mode_refs_raw = {k: v for k, v in mode_refs_raw.items() if k not in _MAIN_BREAKER}
 
     active_appliances = {item.get("appliance") for item in daily_summary if item.get("daily_kwh", 0) > 0}
     filtered_refs = {k: v for k, v in mode_refs_raw.items() if k in active_appliances} if isinstance(mode_refs_raw, dict) else mode_refs_raw

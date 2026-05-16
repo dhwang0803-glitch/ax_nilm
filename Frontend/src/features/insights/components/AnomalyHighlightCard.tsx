@@ -1,4 +1,4 @@
-import type { AnomalyHighlight, InsightSeverity } from "../types";
+import type { AnomalyHighlight, DiagnosisCategory, InsightSeverity } from "../types";
 
 type Props = {
   highlights: AnomalyHighlight[];
@@ -14,6 +14,12 @@ const SEVERITY_PILL: Record<InsightSeverity, string> = {
   low: "bg-fill-2 text-ink-2",
   medium: "bg-yellow-100 text-yellow-800",
   high: "bg-red-100 text-red-700",
+};
+
+const CATEGORY_PILL: Record<DiagnosisCategory, string> = {
+  이상: "bg-red-50 text-red-700 border border-red-200",
+  사용변화: "bg-blue-50 text-blue-700 border border-blue-200",
+  정상: "bg-fill-2 text-ink-3 border border-line-2",
 };
 
 export function AnomalyHighlightCard({ highlights }: Props) {
@@ -44,6 +50,11 @@ export function AnomalyHighlightCard({ highlights }: Props) {
                   <span className="text-sm font-semibold text-ink-1">
                     {hl.appliance}
                   </span>
+                  {hl.category && (
+                    <span className={`px-2 py-0.5 text-xs ${CATEGORY_PILL[hl.category]}`}>
+                      {hl.category}
+                    </span>
+                  )}
                   <span
                     className={`px-2 py-0.5 text-xs ${SEVERITY_PILL[hl.severity]}`}
                   >
@@ -55,7 +66,9 @@ export function AnomalyHighlightCard({ highlights }: Props) {
                 </span>
               </div>
               <p className="mt-2 text-sm text-ink-1">{hl.headline}</p>
-              <p className="mt-1 text-sm text-ink-2">{hl.recommendation}</p>
+              {hl.cause && (
+                <p className="mt-1 text-xs leading-relaxed text-ink-3">{hl.cause}</p>
+              )}
               <button
                 type="button"
                 onClick={() => alert("준비 중입니다")}
