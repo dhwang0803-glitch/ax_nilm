@@ -894,12 +894,42 @@ def _db_hourly_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
             totals[app] = totals.get(app, 0.0) + kwh
     grand_total = sum(totals.values()) or 1.0
 
+    # 전주 동일 날짜 채널별 합산 (week-over-week 계산용)
+    prev_date = actual_date - timedelta(days=7)
+    prev_totals: dict[str, float] = {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COALESCE(hc.device_name, 'ch' || LPAD(p.channel_num::text, 2, '0')) AS device,
+                       ROUND(SUM(p.energy_wh / 1000.0)::numeric, 3) AS kwh
+                FROM power_1hour p
+                LEFT JOIN household_channels hc
+                    ON hc.household_id = p.household_id AND hc.channel_num = p.channel_num
+                WHERE p.household_id = %s
+                  AND DATE(p.hour_bucket AT TIME ZONE 'Asia/Seoul') = %s
+                GROUP BY device
+                """,
+                (household_id, prev_date),
+            )
+            for dev, kwh in cur.fetchall():
+                prev_totals[dev] = float(kwh)
+    except Exception as e:
+        logger.warning("_db_hourly_breakdown prev-week query failed: %s", e)
+
+    def _wow(app: str, cur_kwh: float) -> float | None:
+        prev = prev_totals.get(app)
+        if prev and prev > 0:
+            return round((cur_kwh - prev) / prev * 100, 1)
+        return None
+
     daily_summary = [
         {
             "appliance": app,
             "daily_kwh": round(kwh, 3),
             "share_pct": round(kwh / grand_total * 100, 1),
             "operating_hours": [],
+            "week_over_week_pct": _wow(app, kwh),
         }
         for app, kwh in sorted(totals.items(), key=lambda x: -x[1])
     ]

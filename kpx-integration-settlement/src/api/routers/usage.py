@@ -58,7 +58,11 @@ def usage_analysis():
             "name": a["appliance"],
             "kwh": round(a["daily_kwh"], 2),
             "sharePercent": round(a["share_pct"], 1),
-            "weekOverWeekPercent": week_delta_pct,
+            "weekOverWeekPercent": (
+                a["week_over_week_pct"]
+                if a.get("week_over_week_pct") is not None
+                else week_delta_pct
+            ),
         }
         for a in daily_summary
     ]
