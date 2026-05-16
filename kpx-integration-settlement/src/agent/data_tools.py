@@ -873,7 +873,6 @@ def _db_hourly_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
             (household_id, actual_date),
         )
         rows = cur.fetchall()
-    conn.close()
 
     devices_set: set[str] = set()
     by_hour: dict[int, dict[str, float]] = {}
@@ -916,6 +915,8 @@ def _db_hourly_breakdown(conn, household_id: str, date: str) -> dict[str, Any]:
                 prev_totals[dev] = float(kwh)
     except Exception as e:
         logger.warning("_db_hourly_breakdown prev-week query failed: %s", e)
+    finally:
+        conn.close()
 
     def _wow(app: str, cur_kwh: float) -> float | None:
         prev = prev_totals.get(app)
