@@ -1,0 +1,3266 @@
+[
+  {
+    "appliance": "무선공유기/셋톱박스",
+    "mode": "작동",
+    "started_at": "2023-10-01T17:00:00",
+    "duration_min": 59.4,
+    "energy_wh": 3.455,
+    "avg_w": 3.49,
+    "peak_w": 4.41,
+    "standby": null
+  },
+  {
+    "appliance": "선풍기",
+    "mode": "작동",
+    "started_at": "2023-10-01T17:33:48",
+    "duration_min": 25.9,
+    "energy_wh": 15.355,
+    "avg_w": 35.52,
+    "peak_w": 38.82,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "냉방",
+    "started_at": "2023-10-01T17:00:00",
+    "duration_min": 33.5,
+    "energy_wh": 1.723,
+    "avg_w": 3.08,
+    "peak_w": 3.61,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "예열",
+    "started_at": "2023-10-01T17:33:50",
+    "duration_min": 0.3,
+    "energy_wh": 0.043,
+    "avg_w": 9.13,
+    "peak_w": 25.99,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "냉방",
+    "started_at": "2023-10-01T17:34:08",
+    "duration_min": 25.6,
+    "energy_wh": 12.38,
+    "avg_w": 29.01,
+    "peak_w": 35.33,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:00:00",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:01:42",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.74,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:02:33",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.74,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:04:16",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.71,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:05:07",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:06:49",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.7,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:07:40",
+    "duration_min": 2.0,
+    "energy_wh": 0.019,
+    "avg_w": 0.57,
+    "peak_w": 0.74,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:10:14",
+    "duration_min": 2.0,
+    "energy_wh": 0.019,
+    "avg_w": 0.57,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:12:48",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.74,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:14:30",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:16:12",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.69,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:17:04",
+    "duration_min": 1.1,
+    "energy_wh": 1.752,
+    "avg_w": 93.34,
+    "peak_w": 1795.95,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:18:46",
+    "duration_min": 3.7,
+    "energy_wh": 5.434,
+    "avg_w": 89.06,
+    "peak_w": 89.98,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:23:02",
+    "duration_min": 0.3,
+    "energy_wh": 0.416,
+    "avg_w": 88.66,
+    "peak_w": 89.61,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:23:53",
+    "duration_min": 12.1,
+    "energy_wh": 17.611,
+    "avg_w": 87.26,
+    "peak_w": 91.05,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:36:41",
+    "duration_min": 0.3,
+    "energy_wh": 0.435,
+    "avg_w": 92.79,
+    "peak_w": 93.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:37:32",
+    "duration_min": 4.5,
+    "energy_wh": 6.862,
+    "avg_w": 91.38,
+    "peak_w": 92.8,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:42:40",
+    "duration_min": 0.3,
+    "energy_wh": 0.425,
+    "avg_w": 90.48,
+    "peak_w": 91.25,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T17:43:31",
+    "duration_min": 7.0,
+    "energy_wh": 10.511,
+    "avg_w": 89.58,
+    "peak_w": 92.54,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T17:51:12",
+    "duration_min": 8.7,
+    "energy_wh": 21.18,
+    "avg_w": 145.87,
+    "peak_w": 147.97,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:52:28",
+    "duration_min": 0.0,
+    "energy_wh": 0.035,
+    "avg_w": 113.89,
+    "peak_w": 475.67,
+    "standby": {
+      "duration_min": 51.9,
+      "avg_w": 2.13,
+      "energy_wh": 1.842
+    }
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:52:30",
+    "duration_min": 0.2,
+    "energy_wh": 0.283,
+    "avg_w": 91.6,
+    "peak_w": 120.0,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:52:41",
+    "duration_min": 1.1,
+    "energy_wh": 2.808,
+    "avg_w": 151.73,
+    "peak_w": 253.52,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:53:48",
+    "duration_min": 0.0,
+    "energy_wh": 0.033,
+    "avg_w": 99.12,
+    "peak_w": 142.93,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:53:49",
+    "duration_min": 0.8,
+    "energy_wh": 1.978,
+    "avg_w": 145.31,
+    "peak_w": 261.5,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:54:39",
+    "duration_min": 0.2,
+    "energy_wh": 0.3,
+    "avg_w": 82.2,
+    "peak_w": 140.87,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:54:52",
+    "duration_min": 0.0,
+    "energy_wh": 0.053,
+    "avg_w": 100.62,
+    "peak_w": 127.92,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:54:54",
+    "duration_min": 0.0,
+    "energy_wh": 0.039,
+    "avg_w": 98.57,
+    "peak_w": 175.82,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:54:55",
+    "duration_min": 0.1,
+    "energy_wh": 0.188,
+    "avg_w": 130.84,
+    "peak_w": 212.29,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:55:01",
+    "duration_min": 0.1,
+    "energy_wh": 0.176,
+    "avg_w": 86.34,
+    "peak_w": 149.41,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:55:08",
+    "duration_min": 0.1,
+    "energy_wh": 0.276,
+    "avg_w": 111.37,
+    "peak_w": 172.98,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:55:17",
+    "duration_min": 0.1,
+    "energy_wh": 0.069,
+    "avg_w": 82.8,
+    "peak_w": 136.03,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:55:20",
+    "duration_min": 0.1,
+    "energy_wh": 0.125,
+    "avg_w": 109.84,
+    "peak_w": 190.68,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:55:24",
+    "duration_min": 0.2,
+    "energy_wh": 0.259,
+    "avg_w": 76.64,
+    "peak_w": 161.39,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:55:36",
+    "duration_min": 0.3,
+    "energy_wh": 0.493,
+    "avg_w": 110.18,
+    "peak_w": 194.34,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:55:53",
+    "duration_min": 0.1,
+    "energy_wh": 0.219,
+    "avg_w": 88.84,
+    "peak_w": 146.26,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:56:02",
+    "duration_min": 0.4,
+    "energy_wh": 0.758,
+    "avg_w": 103.11,
+    "peak_w": 210.85,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:56:28",
+    "duration_min": 0.3,
+    "energy_wh": 0.452,
+    "avg_w": 92.0,
+    "peak_w": 127.43,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:56:46",
+    "duration_min": 0.3,
+    "energy_wh": 0.559,
+    "avg_w": 109.74,
+    "peak_w": 182.15,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:57:05",
+    "duration_min": 0.1,
+    "energy_wh": 0.21,
+    "avg_w": 88.82,
+    "peak_w": 144.2,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:57:13",
+    "duration_min": 0.4,
+    "energy_wh": 0.561,
+    "avg_w": 93.27,
+    "peak_w": 147.82,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:57:35",
+    "duration_min": 0.3,
+    "energy_wh": 0.364,
+    "avg_w": 86.74,
+    "peak_w": 133.87,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:57:51",
+    "duration_min": 0.1,
+    "energy_wh": 0.19,
+    "avg_w": 104.05,
+    "peak_w": 159.01,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:57:57",
+    "duration_min": 0.0,
+    "energy_wh": 0.062,
+    "avg_w": 90.58,
+    "peak_w": 133.55,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:58:00",
+    "duration_min": 0.0,
+    "energy_wh": 0.031,
+    "avg_w": 89.67,
+    "peak_w": 107.16,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:58:01",
+    "duration_min": 0.4,
+    "energy_wh": 0.522,
+    "avg_w": 89.03,
+    "peak_w": 151.84,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:58:22",
+    "duration_min": 0.0,
+    "energy_wh": 0.027,
+    "avg_w": 90.18,
+    "peak_w": 142.16,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:58:23",
+    "duration_min": 1.3,
+    "energy_wh": 1.805,
+    "avg_w": 86.13,
+    "peak_w": 144.64,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T17:59:40",
+    "duration_min": 0.2,
+    "energy_wh": 0.386,
+    "avg_w": 96.76,
+    "peak_w": 136.39,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T17:59:54",
+    "duration_min": 0.1,
+    "energy_wh": 0.132,
+    "avg_w": 88.25,
+    "peak_w": 116.27,
+    "standby": null
+  },
+  {
+    "appliance": "무선공유기/셋톱박스",
+    "mode": "작동",
+    "started_at": "2023-10-01T18:00:00",
+    "duration_min": 59.4,
+    "energy_wh": 3.748,
+    "avg_w": 3.79,
+    "peak_w": 4.76,
+    "standby": null
+  },
+  {
+    "appliance": "선풍기",
+    "mode": "작동",
+    "started_at": "2023-10-01T18:00:00",
+    "duration_min": 59.4,
+    "energy_wh": 34.079,
+    "avg_w": 34.42,
+    "peak_w": 35.09,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "냉방",
+    "started_at": "2023-10-01T18:00:00",
+    "duration_min": 18.0,
+    "energy_wh": 8.751,
+    "avg_w": 29.13,
+    "peak_w": 725.53,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "예열",
+    "started_at": "2023-10-01T18:18:12",
+    "duration_min": 6.5,
+    "energy_wh": 95.226,
+    "avg_w": 882.16,
+    "peak_w": 1469.14,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "냉방",
+    "started_at": "2023-10-01T18:24:44",
+    "duration_min": 3.1,
+    "energy_wh": 1.61,
+    "avg_w": 31.18,
+    "peak_w": 549.9,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "예열",
+    "started_at": "2023-10-01T18:27:52",
+    "duration_min": 9.6,
+    "energy_wh": 44.402,
+    "avg_w": 278.25,
+    "peak_w": 663.23,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "냉방",
+    "started_at": "2023-10-01T18:37:32",
+    "duration_min": 22.2,
+    "energy_wh": 1.836,
+    "avg_w": 4.96,
+    "peak_w": 46.06,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:00:00",
+    "duration_min": 11.3,
+    "energy_wh": 27.2,
+    "avg_w": 144.89,
+    "peak_w": 146.41,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:11:56",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.7,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:12:48",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.71,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:14:30",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:16:12",
+    "duration_min": 2.0,
+    "energy_wh": 0.019,
+    "avg_w": 0.56,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:18:46",
+    "duration_min": 1.1,
+    "energy_wh": 0.01,
+    "avg_w": 0.56,
+    "peak_w": 0.7,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:20:28",
+    "duration_min": 6.2,
+    "energy_wh": 10.552,
+    "avg_w": 102.19,
+    "peak_w": 1733.31,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:27:18",
+    "duration_min": 0.3,
+    "energy_wh": 0.462,
+    "avg_w": 98.45,
+    "peak_w": 99.11,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:28:09",
+    "duration_min": 1.1,
+    "energy_wh": 1.842,
+    "avg_w": 98.09,
+    "peak_w": 99.63,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:29:52",
+    "duration_min": 0.3,
+    "energy_wh": 0.457,
+    "avg_w": 97.32,
+    "peak_w": 98.0,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:30:43",
+    "duration_min": 0.3,
+    "energy_wh": 0.454,
+    "avg_w": 96.73,
+    "peak_w": 97.82,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:31:34",
+    "duration_min": 5.4,
+    "energy_wh": 8.438,
+    "avg_w": 94.62,
+    "peak_w": 97.01,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:37:32",
+    "duration_min": 0.3,
+    "energy_wh": 0.439,
+    "avg_w": 93.46,
+    "peak_w": 94.15,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:38:24",
+    "duration_min": 11.3,
+    "energy_wh": 17.333,
+    "avg_w": 92.33,
+    "peak_w": 94.39,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:50:20",
+    "duration_min": 0.3,
+    "energy_wh": 0.427,
+    "avg_w": 90.92,
+    "peak_w": 91.97,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:51:12",
+    "duration_min": 3.7,
+    "energy_wh": 5.498,
+    "avg_w": 90.11,
+    "peak_w": 91.39,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:55:28",
+    "duration_min": 0.3,
+    "energy_wh": 0.421,
+    "avg_w": 89.78,
+    "peak_w": 90.78,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T18:56:19",
+    "duration_min": 2.8,
+    "energy_wh": 4.197,
+    "avg_w": 89.42,
+    "peak_w": 90.81,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T18:59:44",
+    "duration_min": 0.3,
+    "energy_wh": 0.392,
+    "avg_w": 89.11,
+    "peak_w": 90.37,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:00:00",
+    "duration_min": 2.1,
+    "energy_wh": 3.016,
+    "avg_w": 87.77,
+    "peak_w": 211.98,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:02:04",
+    "duration_min": 1.2,
+    "energy_wh": 2.893,
+    "avg_w": 145.53,
+    "peak_w": 230.71,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:03:17",
+    "duration_min": 0.1,
+    "energy_wh": 0.08,
+    "avg_w": 95.19,
+    "peak_w": 119.59,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:03:20",
+    "duration_min": 0.0,
+    "energy_wh": 0.069,
+    "avg_w": 100.48,
+    "peak_w": 155.26,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:03:22",
+    "duration_min": 0.2,
+    "energy_wh": 0.289,
+    "avg_w": 92.24,
+    "peak_w": 146.86,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:03:34",
+    "duration_min": 0.1,
+    "energy_wh": 0.224,
+    "avg_w": 98.29,
+    "peak_w": 154.76,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:03:42",
+    "duration_min": 0.0,
+    "energy_wh": 0.022,
+    "avg_w": 120.08,
+    "peak_w": 148.36,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:03:43",
+    "duration_min": 0.1,
+    "energy_wh": 0.195,
+    "avg_w": 101.64,
+    "peak_w": 156.84,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:03:50",
+    "duration_min": 5.5,
+    "energy_wh": 7.955,
+    "avg_w": 87.21,
+    "peak_w": 148.7,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:09:21",
+    "duration_min": 0.1,
+    "energy_wh": 0.092,
+    "avg_w": 92.23,
+    "peak_w": 135.65,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:09:25",
+    "duration_min": 2.1,
+    "energy_wh": 3.115,
+    "avg_w": 87.12,
+    "peak_w": 162.85,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:11:35",
+    "duration_min": 0.1,
+    "energy_wh": 0.182,
+    "avg_w": 104.52,
+    "peak_w": 153.1,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:11:41",
+    "duration_min": 0.3,
+    "energy_wh": 0.387,
+    "avg_w": 82.85,
+    "peak_w": 123.4,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:11:58",
+    "duration_min": 0.1,
+    "energy_wh": 0.123,
+    "avg_w": 102.56,
+    "peak_w": 134.34,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:12:03",
+    "duration_min": 0.0,
+    "energy_wh": 0.053,
+    "avg_w": 92.64,
+    "peak_w": 139.78,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:12:05",
+    "duration_min": 0.1,
+    "energy_wh": 0.102,
+    "avg_w": 98.48,
+    "peak_w": 150.46,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:12:09",
+    "duration_min": 1.2,
+    "energy_wh": 1.729,
+    "avg_w": 87.43,
+    "peak_w": 148.7,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:13:20",
+    "duration_min": 0.3,
+    "energy_wh": 0.452,
+    "avg_w": 99.22,
+    "peak_w": 143.89,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:13:37",
+    "duration_min": 0.4,
+    "energy_wh": 0.624,
+    "avg_w": 89.57,
+    "peak_w": 145.26,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:14:02",
+    "duration_min": 0.1,
+    "energy_wh": 0.189,
+    "avg_w": 103.17,
+    "peak_w": 146.11,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:14:09",
+    "duration_min": 0.0,
+    "energy_wh": 0.027,
+    "avg_w": 108.74,
+    "peak_w": 129.86,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:14:10",
+    "duration_min": 0.1,
+    "energy_wh": 0.149,
+    "avg_w": 104.42,
+    "peak_w": 142.27,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:14:15",
+    "duration_min": 0.2,
+    "energy_wh": 0.311,
+    "avg_w": 88.53,
+    "peak_w": 129.5,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:14:28",
+    "duration_min": 0.1,
+    "energy_wh": 0.155,
+    "avg_w": 101.79,
+    "peak_w": 138.22,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:14:33",
+    "duration_min": 0.4,
+    "energy_wh": 0.62,
+    "avg_w": 87.26,
+    "peak_w": 126.59,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:14:59",
+    "duration_min": 0.2,
+    "energy_wh": 0.32,
+    "avg_w": 102.68,
+    "peak_w": 147.02,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:15:11",
+    "duration_min": 0.1,
+    "energy_wh": 0.187,
+    "avg_w": 87.28,
+    "peak_w": 126.84,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:15:18",
+    "duration_min": 0.1,
+    "energy_wh": 0.113,
+    "avg_w": 98.27,
+    "peak_w": 158.06,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:15:23",
+    "duration_min": 0.5,
+    "energy_wh": 0.685,
+    "avg_w": 85.54,
+    "peak_w": 132.49,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:15:52",
+    "duration_min": 0.1,
+    "energy_wh": 0.146,
+    "avg_w": 94.97,
+    "peak_w": 144.51,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:15:57",
+    "duration_min": 1.1,
+    "energy_wh": 1.647,
+    "avg_w": 89.33,
+    "peak_w": 153.73,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:17:04",
+    "duration_min": 0.2,
+    "energy_wh": 0.292,
+    "avg_w": 99.37,
+    "peak_w": 146.36,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:17:15",
+    "duration_min": 0.1,
+    "energy_wh": 0.17,
+    "avg_w": 81.31,
+    "peak_w": 122.01,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:17:23",
+    "duration_min": 0.1,
+    "energy_wh": 0.276,
+    "avg_w": 111.0,
+    "peak_w": 152.88,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:17:32",
+    "duration_min": 0.2,
+    "energy_wh": 0.256,
+    "avg_w": 77.07,
+    "peak_w": 129.93,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:17:44",
+    "duration_min": 0.2,
+    "energy_wh": 0.262,
+    "avg_w": 99.67,
+    "peak_w": 154.38,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:17:53",
+    "duration_min": 0.7,
+    "energy_wh": 1.083,
+    "avg_w": 88.24,
+    "peak_w": 140.58,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:18:38",
+    "duration_min": 0.2,
+    "energy_wh": 0.375,
+    "avg_w": 113.6,
+    "peak_w": 177.54,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:18:50",
+    "duration_min": 0.0,
+    "energy_wh": 0.06,
+    "avg_w": 96.76,
+    "peak_w": 133.01,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:18:52",
+    "duration_min": 0.2,
+    "energy_wh": 0.262,
+    "avg_w": 101.17,
+    "peak_w": 143.95,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:19:02",
+    "duration_min": 3.7,
+    "energy_wh": 5.378,
+    "avg_w": 86.17,
+    "peak_w": 143.02,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:22:49",
+    "duration_min": 0.1,
+    "energy_wh": 0.121,
+    "avg_w": 109.94,
+    "peak_w": 166.88,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:22:53",
+    "duration_min": 0.1,
+    "energy_wh": 0.107,
+    "avg_w": 92.21,
+    "peak_w": 138.59,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:22:57",
+    "duration_min": 0.0,
+    "energy_wh": 0.047,
+    "avg_w": 87.68,
+    "peak_w": 136.91,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:22:59",
+    "duration_min": 0.1,
+    "energy_wh": 0.089,
+    "avg_w": 94.9,
+    "peak_w": 123.02,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:23:02",
+    "duration_min": 0.1,
+    "energy_wh": 0.127,
+    "avg_w": 90.27,
+    "peak_w": 117.42,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:23:07",
+    "duration_min": 0.3,
+    "energy_wh": 0.434,
+    "avg_w": 86.46,
+    "peak_w": 131.05,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:23:26",
+    "duration_min": 0.1,
+    "energy_wh": 0.092,
+    "avg_w": 90.72,
+    "peak_w": 115.64,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:23:29",
+    "duration_min": 1.1,
+    "energy_wh": 1.632,
+    "avg_w": 85.54,
+    "peak_w": 131.82,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:24:39",
+    "duration_min": 0.0,
+    "energy_wh": 0.061,
+    "avg_w": 103.37,
+    "peak_w": 149.64,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:24:41",
+    "duration_min": 1.0,
+    "energy_wh": 1.457,
+    "avg_w": 84.55,
+    "peak_w": 129.08,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:25:43",
+    "duration_min": 0.1,
+    "energy_wh": 0.203,
+    "avg_w": 108.43,
+    "peak_w": 139.48,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:25:50",
+    "duration_min": 0.1,
+    "energy_wh": 0.161,
+    "avg_w": 83.29,
+    "peak_w": 150.82,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:25:57",
+    "duration_min": 0.1,
+    "energy_wh": 0.14,
+    "avg_w": 112.47,
+    "peak_w": 181.82,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:26:02",
+    "duration_min": 0.0,
+    "energy_wh": 0.075,
+    "avg_w": 99.57,
+    "peak_w": 141.95,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:26:05",
+    "duration_min": 0.4,
+    "energy_wh": 0.622,
+    "avg_w": 104.64,
+    "peak_w": 169.52,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:26:26",
+    "duration_min": 0.1,
+    "energy_wh": 0.132,
+    "avg_w": 87.96,
+    "peak_w": 127.4,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:26:32",
+    "duration_min": 0.1,
+    "energy_wh": 0.11,
+    "avg_w": 92.26,
+    "peak_w": 125.3,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:26:36",
+    "duration_min": 0.0,
+    "energy_wh": 0.03,
+    "avg_w": 102.94,
+    "peak_w": 116.5,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:26:37",
+    "duration_min": 0.1,
+    "energy_wh": 0.189,
+    "avg_w": 91.78,
+    "peak_w": 162.27,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:26:44",
+    "duration_min": 0.9,
+    "energy_wh": 1.264,
+    "avg_w": 80.99,
+    "peak_w": 124.78,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:27:41",
+    "duration_min": 0.1,
+    "energy_wh": 0.1,
+    "avg_w": 98.81,
+    "peak_w": 142.1,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:27:45",
+    "duration_min": 0.9,
+    "energy_wh": 1.141,
+    "avg_w": 73.26,
+    "peak_w": 132.71,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:28:42",
+    "duration_min": 0.1,
+    "energy_wh": 0.085,
+    "avg_w": 96.97,
+    "peak_w": 137.93,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:28:45",
+    "duration_min": 9.6,
+    "energy_wh": 12.893,
+    "avg_w": 80.36,
+    "peak_w": 143.61,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:38:28",
+    "duration_min": 0.1,
+    "energy_wh": 0.163,
+    "avg_w": 112.11,
+    "peak_w": 159.94,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:38:33",
+    "duration_min": 7.8,
+    "energy_wh": 10.446,
+    "avg_w": 80.14,
+    "peak_w": 141.47,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:46:27",
+    "duration_min": 0.0,
+    "energy_wh": 0.051,
+    "avg_w": 93.37,
+    "peak_w": 117.03,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:46:29",
+    "duration_min": 6.8,
+    "energy_wh": 9.107,
+    "avg_w": 80.77,
+    "peak_w": 157.54,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:53:19",
+    "duration_min": 0.1,
+    "energy_wh": 0.165,
+    "avg_w": 128.27,
+    "peak_w": 234.39,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:53:24",
+    "duration_min": 1.9,
+    "energy_wh": 2.609,
+    "avg_w": 81.64,
+    "peak_w": 175.01,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T18:55:20",
+    "duration_min": 0.1,
+    "energy_wh": 0.134,
+    "avg_w": 105.67,
+    "peak_w": 145.51,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T18:55:25",
+    "duration_min": 4.5,
+    "energy_wh": 6.01,
+    "avg_w": 79.6,
+    "peak_w": 135.15,
+    "standby": null
+  },
+  {
+    "appliance": "무선공유기/셋톱박스",
+    "mode": "작동",
+    "started_at": "2023-10-01T19:00:00",
+    "duration_min": 59.4,
+    "energy_wh": 3.753,
+    "avg_w": 3.79,
+    "peak_w": 5.4,
+    "standby": null
+  },
+  {
+    "appliance": "선풍기",
+    "mode": "작동",
+    "started_at": "2023-10-01T19:00:00",
+    "duration_min": 56.3,
+    "energy_wh": 32.224,
+    "avg_w": 34.36,
+    "peak_w": 38.54,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "냉방",
+    "started_at": "2023-10-01T19:00:00",
+    "duration_min": 59.4,
+    "energy_wh": 3.043,
+    "avg_w": 3.07,
+    "peak_w": 3.69,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:00:00",
+    "duration_min": 1.1,
+    "energy_wh": 1.671,
+    "avg_w": 89.0,
+    "peak_w": 90.52,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:01:42",
+    "duration_min": 19.7,
+    "energy_wh": 22.709,
+    "avg_w": 69.12,
+    "peak_w": 89.9,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:22:11",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.67,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:23:02",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:24:44",
+    "duration_min": 2.8,
+    "energy_wh": 0.027,
+    "avg_w": 0.57,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:28:09",
+    "duration_min": 2.0,
+    "energy_wh": 0.018,
+    "avg_w": 0.56,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:30:43",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:32:25",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.71,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:33:16",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.67,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:34:08",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:34:59",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.67,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:35:50",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.67,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:36:41",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.69,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:38:24",
+    "duration_min": 2.0,
+    "energy_wh": 0.019,
+    "avg_w": 0.57,
+    "peak_w": 0.7,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:40:57",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.76,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:42:40",
+    "duration_min": 2.0,
+    "energy_wh": 0.019,
+    "avg_w": 0.57,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:45:13",
+    "duration_min": 2.0,
+    "energy_wh": 0.019,
+    "avg_w": 0.56,
+    "peak_w": 0.71,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:47:47",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.67,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:48:38",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.68,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:49:29",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.68,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:50:20",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:51:12",
+    "duration_min": 2.0,
+    "energy_wh": 0.018,
+    "avg_w": 0.56,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:53:45",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.73,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:55:28",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.7,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T19:56:19",
+    "duration_min": 2.0,
+    "energy_wh": 2.166,
+    "avg_w": 65.93,
+    "peak_w": 1759.4,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T19:58:52",
+    "duration_min": 1.1,
+    "energy_wh": 1.661,
+    "avg_w": 89.91,
+    "peak_w": 91.07,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:00:00",
+    "duration_min": 6.0,
+    "energy_wh": 8.105,
+    "avg_w": 80.72,
+    "peak_w": 131.57,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T19:06:05",
+    "duration_min": 0.2,
+    "energy_wh": 0.427,
+    "avg_w": 106.28,
+    "peak_w": 160.01,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:06:19",
+    "duration_min": 0.4,
+    "energy_wh": 0.587,
+    "avg_w": 85.35,
+    "peak_w": 144.5,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T19:06:44",
+    "duration_min": 0.0,
+    "energy_wh": 0.051,
+    "avg_w": 91.88,
+    "peak_w": 112.43,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:06:46",
+    "duration_min": 3.3,
+    "energy_wh": 4.467,
+    "avg_w": 81.23,
+    "peak_w": 148.49,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T19:10:06",
+    "duration_min": 0.0,
+    "energy_wh": 0.046,
+    "avg_w": 89.0,
+    "peak_w": 107.3,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:10:08",
+    "duration_min": 4.0,
+    "energy_wh": 4.749,
+    "avg_w": 71.83,
+    "peak_w": 140.54,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T19:14:09",
+    "duration_min": 3.0,
+    "energy_wh": 5.851,
+    "avg_w": 117.02,
+    "peak_w": 235.6,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:17:10",
+    "duration_min": 1.9,
+    "energy_wh": 2.384,
+    "avg_w": 76.1,
+    "peak_w": 148.63,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T19:19:04",
+    "duration_min": 0.1,
+    "energy_wh": 0.108,
+    "avg_w": 89.78,
+    "peak_w": 150.12,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:19:09",
+    "duration_min": 33.3,
+    "energy_wh": 46.015,
+    "avg_w": 82.82,
+    "peak_w": 147.57,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T19:52:49",
+    "duration_min": 0.0,
+    "energy_wh": 0.026,
+    "avg_w": 87.44,
+    "peak_w": 114.01,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:52:50",
+    "duration_min": 2.1,
+    "energy_wh": 2.95,
+    "avg_w": 84.55,
+    "peak_w": 143.96,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T19:54:57",
+    "duration_min": 0.0,
+    "energy_wh": 0.036,
+    "avg_w": 91.66,
+    "peak_w": 126.82,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T19:54:58",
+    "duration_min": 5.0,
+    "energy_wh": 6.206,
+    "avg_w": 74.95,
+    "peak_w": 137.6,
+    "standby": null
+  },
+  {
+    "appliance": "무선공유기/셋톱박스",
+    "mode": "작동",
+    "started_at": "2023-10-01T20:00:00",
+    "duration_min": 59.4,
+    "energy_wh": 3.764,
+    "avg_w": 3.8,
+    "peak_w": 5.1,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:00:00",
+    "duration_min": 5.6,
+    "energy_wh": 0.051,
+    "avg_w": 0.55,
+    "peak_w": 135.27,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:05:41",
+    "duration_min": 0.3,
+    "energy_wh": 0.079,
+    "avg_w": 16.88,
+    "peak_w": 172.66,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:05:58",
+    "duration_min": 2.0,
+    "energy_wh": 1.381,
+    "avg_w": 42.04,
+    "peak_w": 214.15,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:07:57",
+    "duration_min": 0.3,
+    "energy_wh": 0.403,
+    "avg_w": 85.88,
+    "peak_w": 249.19,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:08:14",
+    "duration_min": 0.6,
+    "energy_wh": 0.745,
+    "avg_w": 79.39,
+    "peak_w": 493.58,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:08:49",
+    "duration_min": 0.3,
+    "energy_wh": 0.509,
+    "avg_w": 108.49,
+    "peak_w": 407.98,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:09:06",
+    "duration_min": 0.3,
+    "energy_wh": 0.66,
+    "avg_w": 140.63,
+    "peak_w": 752.78,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:09:23",
+    "duration_min": 0.3,
+    "energy_wh": 0.358,
+    "avg_w": 76.28,
+    "peak_w": 249.13,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:09:40",
+    "duration_min": 0.3,
+    "energy_wh": 0.712,
+    "avg_w": 151.71,
+    "peak_w": 686.53,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:09:57",
+    "duration_min": 0.3,
+    "energy_wh": 0.466,
+    "avg_w": 99.26,
+    "peak_w": 290.78,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:10:14",
+    "duration_min": 0.3,
+    "energy_wh": 0.865,
+    "avg_w": 184.38,
+    "peak_w": 836.87,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:10:31",
+    "duration_min": 0.3,
+    "energy_wh": 0.56,
+    "avg_w": 119.42,
+    "peak_w": 338.3,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:10:48",
+    "duration_min": 0.6,
+    "energy_wh": 2.008,
+    "avg_w": 213.97,
+    "peak_w": 901.63,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:11:22",
+    "duration_min": 0.3,
+    "energy_wh": 0.819,
+    "avg_w": 174.58,
+    "peak_w": 406.74,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:11:39",
+    "duration_min": 0.3,
+    "energy_wh": 0.502,
+    "avg_w": 106.89,
+    "peak_w": 408.01,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:11:56",
+    "duration_min": 2.0,
+    "energy_wh": 5.041,
+    "avg_w": 153.45,
+    "peak_w": 443.38,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:13:56",
+    "duration_min": 0.3,
+    "energy_wh": 0.474,
+    "avg_w": 101.07,
+    "peak_w": 428.46,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:14:13",
+    "duration_min": 0.3,
+    "energy_wh": 0.889,
+    "avg_w": 189.39,
+    "peak_w": 460.88,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:14:30",
+    "duration_min": 0.3,
+    "energy_wh": 0.488,
+    "avg_w": 103.91,
+    "peak_w": 443.59,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:14:47",
+    "duration_min": 0.3,
+    "energy_wh": 0.829,
+    "avg_w": 176.53,
+    "peak_w": 435.01,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:15:04",
+    "duration_min": 0.3,
+    "energy_wh": 0.572,
+    "avg_w": 121.88,
+    "peak_w": 426.07,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:15:21",
+    "duration_min": 2.0,
+    "energy_wh": 4.864,
+    "avg_w": 148.05,
+    "peak_w": 506.73,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:17:21",
+    "duration_min": 0.3,
+    "energy_wh": 0.559,
+    "avg_w": 119.05,
+    "peak_w": 378.72,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:17:38",
+    "duration_min": 0.8,
+    "energy_wh": 2.007,
+    "avg_w": 142.51,
+    "peak_w": 478.39,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:18:29",
+    "duration_min": 0.6,
+    "energy_wh": 1.34,
+    "avg_w": 142.76,
+    "peak_w": 421.18,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:19:03",
+    "duration_min": 1.1,
+    "energy_wh": 2.657,
+    "avg_w": 141.51,
+    "peak_w": 436.4,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:20:11",
+    "duration_min": 0.3,
+    "energy_wh": 0.698,
+    "avg_w": 148.67,
+    "peak_w": 435.06,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:20:28",
+    "duration_min": 2.3,
+    "energy_wh": 5.478,
+    "avg_w": 145.89,
+    "peak_w": 467.75,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:22:45",
+    "duration_min": 0.3,
+    "energy_wh": 0.505,
+    "avg_w": 107.5,
+    "peak_w": 457.95,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:23:02",
+    "duration_min": 0.3,
+    "energy_wh": 0.948,
+    "avg_w": 201.98,
+    "peak_w": 487.54,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:23:19",
+    "duration_min": 0.6,
+    "energy_wh": 1.056,
+    "avg_w": 112.55,
+    "peak_w": 442.21,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:23:53",
+    "duration_min": 0.6,
+    "energy_wh": 0.973,
+    "avg_w": 103.63,
+    "peak_w": 289.27,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:24:27",
+    "duration_min": 0.6,
+    "energy_wh": 0.917,
+    "avg_w": 97.7,
+    "peak_w": 386.59,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:25:01",
+    "duration_min": 0.6,
+    "energy_wh": 0.661,
+    "avg_w": 70.37,
+    "peak_w": 281.91,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:25:36",
+    "duration_min": 0.3,
+    "energy_wh": 0.197,
+    "avg_w": 42.06,
+    "peak_w": 78.68,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:25:53",
+    "duration_min": 0.3,
+    "energy_wh": 0.171,
+    "avg_w": 36.43,
+    "peak_w": 52.86,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:26:10",
+    "duration_min": 0.6,
+    "energy_wh": 0.797,
+    "avg_w": 84.92,
+    "peak_w": 173.64,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:26:44",
+    "duration_min": 0.3,
+    "energy_wh": 0.272,
+    "avg_w": 57.96,
+    "peak_w": 95.73,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:27:01",
+    "duration_min": 0.6,
+    "energy_wh": 0.616,
+    "avg_w": 65.63,
+    "peak_w": 145.89,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:27:35",
+    "duration_min": 0.6,
+    "energy_wh": 0.674,
+    "avg_w": 71.78,
+    "peak_w": 87.24,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:28:09",
+    "duration_min": 0.3,
+    "energy_wh": 0.571,
+    "avg_w": 121.68,
+    "peak_w": 142.47,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:28:26",
+    "duration_min": 0.3,
+    "energy_wh": 0.813,
+    "avg_w": 173.13,
+    "peak_w": 204.58,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:28:43",
+    "duration_min": 0.3,
+    "energy_wh": 0.712,
+    "avg_w": 151.75,
+    "peak_w": 192.79,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:29:00",
+    "duration_min": 1.1,
+    "energy_wh": 4.043,
+    "avg_w": 215.35,
+    "peak_w": 321.98,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:30:09",
+    "duration_min": 1.7,
+    "energy_wh": 4.034,
+    "avg_w": 143.25,
+    "peak_w": 270.72,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:31:51",
+    "duration_min": 0.8,
+    "energy_wh": 0.894,
+    "avg_w": 63.5,
+    "peak_w": 259.59,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:32:42",
+    "duration_min": 2.0,
+    "energy_wh": 3.098,
+    "avg_w": 94.3,
+    "peak_w": 509.56,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:34:42",
+    "duration_min": 0.3,
+    "energy_wh": 0.544,
+    "avg_w": 115.85,
+    "peak_w": 512.21,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:34:59",
+    "duration_min": 0.3,
+    "energy_wh": 0.69,
+    "avg_w": 147.12,
+    "peak_w": 601.43,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:35:16",
+    "duration_min": 0.6,
+    "energy_wh": 1.269,
+    "avg_w": 135.18,
+    "peak_w": 703.57,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:35:50",
+    "duration_min": 1.1,
+    "energy_wh": 5.345,
+    "avg_w": 284.7,
+    "peak_w": 735.19,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:36:58",
+    "duration_min": 0.3,
+    "energy_wh": 0.254,
+    "avg_w": 54.13,
+    "peak_w": 70.67,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:37:15",
+    "duration_min": 0.3,
+    "energy_wh": 0.501,
+    "avg_w": 106.65,
+    "peak_w": 622.35,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:37:32",
+    "duration_min": 0.3,
+    "energy_wh": 1.033,
+    "avg_w": 220.08,
+    "peak_w": 695.36,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:37:49",
+    "duration_min": 1.7,
+    "energy_wh": 1.992,
+    "avg_w": 70.75,
+    "peak_w": 427.53,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:39:32",
+    "duration_min": 0.3,
+    "energy_wh": 0.137,
+    "avg_w": 29.14,
+    "peak_w": 64.82,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:39:49",
+    "duration_min": 0.3,
+    "energy_wh": 0.529,
+    "avg_w": 112.74,
+    "peak_w": 173.1,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:40:06",
+    "duration_min": 0.3,
+    "energy_wh": 0.375,
+    "avg_w": 79.86,
+    "peak_w": 103.91,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:40:23",
+    "duration_min": 0.3,
+    "energy_wh": 0.128,
+    "avg_w": 27.19,
+    "peak_w": 84.4,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:40:40",
+    "duration_min": 0.8,
+    "energy_wh": 1.061,
+    "avg_w": 75.39,
+    "peak_w": 145.21,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:41:31",
+    "duration_min": 0.3,
+    "energy_wh": 0.437,
+    "avg_w": 93.04,
+    "peak_w": 141.35,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:41:48",
+    "duration_min": 0.3,
+    "energy_wh": 0.682,
+    "avg_w": 145.24,
+    "peak_w": 171.72,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:42:05",
+    "duration_min": 0.8,
+    "energy_wh": 2.356,
+    "avg_w": 167.33,
+    "peak_w": 245.26,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:42:57",
+    "duration_min": 0.3,
+    "energy_wh": 0.038,
+    "avg_w": 8.05,
+    "peak_w": 8.51,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:43:14",
+    "duration_min": 0.3,
+    "energy_wh": 0.139,
+    "avg_w": 29.56,
+    "peak_w": 209.21,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:43:31",
+    "duration_min": 0.8,
+    "energy_wh": 0.868,
+    "avg_w": 61.61,
+    "peak_w": 247.71,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:44:22",
+    "duration_min": 1.1,
+    "energy_wh": 1.518,
+    "avg_w": 80.87,
+    "peak_w": 322.47,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:45:30",
+    "duration_min": 0.6,
+    "energy_wh": 0.901,
+    "avg_w": 95.97,
+    "peak_w": 395.06,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:46:04",
+    "duration_min": 0.8,
+    "energy_wh": 1.64,
+    "avg_w": 116.5,
+    "peak_w": 589.4,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:46:56",
+    "duration_min": 0.6,
+    "energy_wh": 1.319,
+    "avg_w": 140.54,
+    "peak_w": 672.99,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:47:30",
+    "duration_min": 1.1,
+    "energy_wh": 5.992,
+    "avg_w": 319.19,
+    "peak_w": 744.36,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:48:38",
+    "duration_min": 0.3,
+    "energy_wh": 2.222,
+    "avg_w": 473.39,
+    "peak_w": 650.7,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:48:55",
+    "duration_min": 1.7,
+    "energy_wh": 7.869,
+    "avg_w": 279.43,
+    "peak_w": 860.67,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:50:37",
+    "duration_min": 0.8,
+    "energy_wh": 2.419,
+    "avg_w": 171.83,
+    "peak_w": 660.91,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:51:29",
+    "duration_min": 0.6,
+    "energy_wh": 0.537,
+    "avg_w": 57.18,
+    "peak_w": 270.32,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:52:03",
+    "duration_min": 0.6,
+    "energy_wh": 0.362,
+    "avg_w": 38.54,
+    "peak_w": 84.67,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:52:37",
+    "duration_min": 0.3,
+    "energy_wh": 0.312,
+    "avg_w": 66.47,
+    "peak_w": 167.63,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:52:54",
+    "duration_min": 0.3,
+    "energy_wh": 0.253,
+    "avg_w": 53.87,
+    "peak_w": 234.82,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:53:11",
+    "duration_min": 0.3,
+    "energy_wh": 0.33,
+    "avg_w": 70.35,
+    "peak_w": 145.1,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:53:28",
+    "duration_min": 0.3,
+    "energy_wh": 0.463,
+    "avg_w": 98.64,
+    "peak_w": 180.62,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:53:45",
+    "duration_min": 0.3,
+    "energy_wh": 0.209,
+    "avg_w": 44.62,
+    "peak_w": 103.65,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:54:02",
+    "duration_min": 0.8,
+    "energy_wh": 0.999,
+    "avg_w": 70.93,
+    "peak_w": 155.0,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:54:53",
+    "duration_min": 0.3,
+    "energy_wh": 0.354,
+    "avg_w": 75.48,
+    "peak_w": 143.31,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:55:10",
+    "duration_min": 0.3,
+    "energy_wh": 0.618,
+    "avg_w": 131.63,
+    "peak_w": 153.84,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:55:28",
+    "duration_min": 0.8,
+    "energy_wh": 2.606,
+    "avg_w": 185.1,
+    "peak_w": 238.8,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:56:19",
+    "duration_min": 2.0,
+    "energy_wh": 5.101,
+    "avg_w": 155.26,
+    "peak_w": 194.84,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "세탁",
+    "started_at": "2023-10-01T20:58:18",
+    "duration_min": 0.6,
+    "energy_wh": 2.177,
+    "avg_w": 231.92,
+    "peak_w": 296.4,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "헹굼",
+    "started_at": "2023-10-01T20:58:52",
+    "duration_min": 0.8,
+    "energy_wh": 2.921,
+    "avg_w": 207.47,
+    "peak_w": 239.41,
+    "standby": null
+  },
+  {
+    "appliance": "세탁기",
+    "mode": "탈수",
+    "started_at": "2023-10-01T20:59:44",
+    "duration_min": 0.3,
+    "energy_wh": 0.91,
+    "avg_w": 206.81,
+    "peak_w": 239.59,
+    "standby": null
+  },
+  {
+    "appliance": "에어컨",
+    "mode": "냉방",
+    "started_at": "2023-10-01T20:00:00",
+    "duration_min": 59.4,
+    "energy_wh": 3.074,
+    "avg_w": 3.1,
+    "peak_w": 11.02,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:00:00",
+    "duration_min": 11.3,
+    "energy_wh": 16.671,
+    "avg_w": 88.8,
+    "peak_w": 91.32,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:11:56",
+    "duration_min": 0.3,
+    "energy_wh": 0.411,
+    "avg_w": 87.49,
+    "peak_w": 88.51,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:12:48",
+    "duration_min": 1.1,
+    "energy_wh": 1.636,
+    "avg_w": 87.16,
+    "peak_w": 88.69,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:14:30",
+    "duration_min": 0.3,
+    "energy_wh": 0.409,
+    "avg_w": 87.21,
+    "peak_w": 88.33,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:15:21",
+    "duration_min": 0.3,
+    "energy_wh": 0.408,
+    "avg_w": 86.91,
+    "peak_w": 87.82,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:16:12",
+    "duration_min": 1.1,
+    "energy_wh": 1.626,
+    "avg_w": 86.61,
+    "peak_w": 87.77,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:17:55",
+    "duration_min": 12.1,
+    "energy_wh": 17.324,
+    "avg_w": 85.84,
+    "peak_w": 87.74,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:30:43",
+    "duration_min": 1.1,
+    "energy_wh": 0.01,
+    "avg_w": 0.56,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:32:25",
+    "duration_min": 2.0,
+    "energy_wh": 0.018,
+    "avg_w": 0.56,
+    "peak_w": 0.7,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:34:59",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:36:41",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.69,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:37:32",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.68,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:38:24",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.69,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:39:15",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.77,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:40:57",
+    "duration_min": 2.0,
+    "energy_wh": 0.018,
+    "avg_w": 0.56,
+    "peak_w": 0.77,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:43:31",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.71,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:45:13",
+    "duration_min": 5.4,
+    "energy_wh": 0.05,
+    "avg_w": 0.56,
+    "peak_w": 0.75,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:51:12",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:52:54",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.56,
+    "peak_w": 0.66,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:53:45",
+    "duration_min": 0.3,
+    "energy_wh": 0.003,
+    "avg_w": 0.57,
+    "peak_w": 0.7,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:54:36",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:56:19",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.56,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "장시간 냉각",
+    "started_at": "2023-10-01T20:58:01",
+    "duration_min": 1.1,
+    "energy_wh": 0.011,
+    "avg_w": 0.57,
+    "peak_w": 0.72,
+    "standby": null
+  },
+  {
+    "appliance": "일반 냉장고",
+    "mode": "냉각",
+    "started_at": "2023-10-01T20:59:44",
+    "duration_min": 0.3,
+    "energy_wh": 0.002,
+    "avg_w": 0.56,
+    "peak_w": 0.69,
+    "standby": null
+  },
+  {
+    "appliance": "제습기",
+    "mode": "제습",
+    "started_at": "2023-10-01T20:00:00",
+    "duration_min": 8.2,
+    "energy_wh": 0.086,
+    "avg_w": 0.63,
+    "peak_w": 0.85,
+    "standby": null
+  },
+  {
+    "appliance": "제습기",
+    "mode": "송풍",
+    "started_at": "2023-10-01T20:08:14",
+    "duration_min": 1.1,
+    "energy_wh": 2.231,
+    "avg_w": 118.83,
+    "peak_w": 1372.87,
+    "standby": null
+  },
+  {
+    "appliance": "제습기",
+    "mode": "제습",
+    "started_at": "2023-10-01T20:09:23",
+    "duration_min": 50.1,
+    "energy_wh": 129.224,
+    "avg_w": 154.74,
+    "peak_w": 158.02,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T20:00:00",
+    "duration_min": 0.0,
+    "energy_wh": 0.073,
+    "avg_w": 99.1,
+    "peak_w": 121.43,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T20:00:02",
+    "duration_min": 54.3,
+    "energy_wh": 67.195,
+    "avg_w": 74.31,
+    "peak_w": 169.95,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T20:55:30",
+    "duration_min": 0.0,
+    "energy_wh": 0.058,
+    "avg_w": 90.9,
+    "peak_w": 128.73,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T20:55:33",
+    "duration_min": 0.0,
+    "energy_wh": 0.036,
+    "avg_w": 96.69,
+    "peak_w": 172.73,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T20:55:34",
+    "duration_min": 0.1,
+    "energy_wh": 0.203,
+    "avg_w": 118.64,
+    "peak_w": 187.84,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T20:55:40",
+    "duration_min": 1.2,
+    "energy_wh": 1.462,
+    "avg_w": 71.99,
+    "peak_w": 149.18,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T20:56:54",
+    "duration_min": 0.0,
+    "energy_wh": 0.02,
+    "avg_w": 82.19,
+    "peak_w": 105.01,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T20:56:55",
+    "duration_min": 2.8,
+    "energy_wh": 3.18,
+    "avg_w": 67.79,
+    "peak_w": 155.48,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "사용중",
+    "started_at": "2023-10-01T20:59:46",
+    "duration_min": 0.0,
+    "energy_wh": 0.016,
+    "avg_w": 81.58,
+    "peak_w": 87.7,
+    "standby": null
+  },
+  {
+    "appliance": "컴퓨터",
+    "mode": "대기",
+    "started_at": "2023-10-01T20:59:46",
+    "duration_min": 0.2,
+    "energy_wh": 0.246,
+    "avg_w": 67.93,
+    "peak_w": 94.25,
+    "standby": null
+  }
+]

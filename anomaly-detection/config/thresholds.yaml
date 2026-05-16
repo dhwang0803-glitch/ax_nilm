@@ -1,0 +1,364 @@
+# 가전별 상태 임계값 (State Thresholds)
+# 출처: nilm-engine/labeling/state_labeling.md EDA 결과 (K-Means + Valley Detection)
+# 이상치 처리: pseudo_labeler에서 동적 계산 (최고 중심값 × outlier_multiplier)
+#   - hard_max 명시된 가전: 해당 값으로 필터 (EDA에서 채널 오염 확인된 가전)
+#   - hard_max 없는 가전: 최고 중심값 × outlier_multiplier(기본 2.0)
+
+global:
+  min_on_power: 5.0        # W > 5W 이상만 on-period로 처리
+  outlier_multiplier: 2.0  # hard_max 없는 가전의 이상치 상한 계수
+
+appliances:
+
+  에어컨:
+    tda_mode: true   # TDA-K=2 (W-K=3 과분할 — fan_low/cool_medium 위상 동일)
+    hard_max: 50.0   # EDA 채널 오염 필터 기준 (비하절기 데이터)
+    # ⚠️ 하절기 데이터 추가 시 재클러스터링 필요 (냉방 모드: 500~2000W)
+    states:
+      - name: 냉방
+        min_w: 0.0
+        max_w: 15.0
+        center_w: 6.8
+      - name: 예열
+        min_w: 15.0
+        max_w: null
+        center_w: 20.0
+
+  김치냉장고:
+    tda_mode: true   # TDA-K=3 = W-K=3 일치
+    hard_max: 200.0  # 정격 소비전력 — EDA 채널 오염 필터 기준
+    states:
+      - name: 팬
+        min_w: 0.0
+        max_w: 68.7
+        center_w: 24.8
+      - name: 약냉
+        min_w: 68.7
+        max_w: 129.1
+        center_w: 112.6
+      - name: 강냉
+        min_w: 129.1
+        max_w: null
+        center_w: 145.5
+
+  제습기:
+    tda_mode: true   # TDA-K=2 (W-K=3 과분할 — dehumid_low/dehumid_high 위상 동일)
+    hard_max: 500.0  # 정격 소비전력 — EDA 채널 오염 필터 기준
+    states:
+      - name: 송풍
+        min_w: 0.0
+        max_w: 96.6
+        center_w: 18.2
+      - name: 제습
+        min_w: 96.6
+        max_w: null
+        center_w: 229.5
+
+  세탁기:
+    tda_mode: true   # TDA-K=3 > W-K=2 (헹굼 33.8W / 세탁 86.6W / 탈수 138.1W)
+    hard_max: 700.0  # 정격 소비전력 — EDA 채널 오염 필터 기준
+    states:
+      - name: 헹굼
+        min_w: 0.0
+        max_w: 60.0
+        center_w: 33.8
+      - name: 세탁
+        min_w: 60.0
+        max_w: 112.0
+        center_w: 86.6
+      - name: 탈수
+        min_w: 112.0
+        max_w: null
+        center_w: 138.1
+
+  공기청정기:
+    simple_mode: true  # 모드 간 W 차이 2~8W — NILM 노이즈 이내, 서브모드 구분 불가 → '작동' 반환
+    states:
+      - name: 수면
+        min_w: 0.0
+        max_w: 6.6
+        center_w: 5.3
+      - name: 약
+        min_w: 6.6
+        max_w: 11.2
+        center_w: 7.8
+      - name: 중
+        min_w: 11.2
+        max_w: 17.5
+        center_w: 14.6
+      - name: 강
+        min_w: 17.5
+        max_w: 24.3
+        center_w: 20.4
+      - name: 터보
+        min_w: 24.3
+        max_w: null
+        center_w: 28.1
+
+  에어프라이어:
+    states:
+      - name: 대기
+        min_w: 0.0
+        max_w: 486.0
+        center_w: 35.0
+      - name: 저온
+        min_w: 486.0
+        max_w: 1095.0
+        center_w: 938.0
+      - name: 중온
+        min_w: 1095.0
+        max_w: 1413.0
+        center_w: 1252.0
+      - name: 고온
+        min_w: 1413.0
+        max_w: null
+        center_w: 1573.0
+
+  의류건조기:
+    states:
+      - name: 대기
+        min_w: 0.0
+        max_w: 253.0
+        center_w: 55.0
+      - name: 드럼회전
+        min_w: 253.0
+        max_w: 620.0
+        center_w: 450.0
+      - name: 중온건조
+        min_w: 620.0
+        max_w: 1271.0
+        center_w: 789.0
+      - name: 고온건조
+        min_w: 1271.0
+        max_w: null
+        center_w: 1752.0
+
+  일반냉장고:
+    tda_mode: true   # TDA-K=2 (냉각 70.8W/장시간 냉각 71.5W — 전력 동일, 지속 패턴으로 구분)
+    states:
+      - name: 냉각
+        min_w: 0.0
+        max_w: 172.0
+        center_w: 70.8
+      - name: 장시간 냉각   # W-range 동일 — TDA fingerprint로만 구분 (door-open/고부하 후)
+        min_w: 0.0
+        max_w: 172.0
+        center_w: 71.5
+      - name: 제상           # W-range 폴백 전용 (TDA 학습 데이터 부족)
+        min_w: 172.0
+        max_w: null
+        center_w: 251.0
+
+  전기다리미:
+    states:
+      - name: 대기
+        min_w: 0.0
+        max_w: 261.0
+        center_w: 14.0
+      - name: 예열
+        min_w: 261.0
+        max_w: 868.0
+        center_w: 508.0
+      - name: 저온
+        min_w: 868.0
+        max_w: 1403.0
+        center_w: 1228.0
+      - name: 중온
+        min_w: 1403.0
+        max_w: 1765.0
+        center_w: 1577.0
+      - name: 고온
+        min_w: 1765.0
+        max_w: null
+        center_w: 1952.0
+
+  헤어드라이기:
+    states:
+      - name: 냉풍약
+        min_w: 0.0
+        max_w: 320.0
+        center_w: 135.0
+      - name: 냉풍강
+        min_w: 320.0
+        max_w: 616.0
+        center_w: 504.0
+      - name: 온풍약
+        min_w: 616.0
+        max_w: 915.0
+        center_w: 727.0
+      - name: 온풍강
+        min_w: 915.0
+        max_w: 1286.0
+        center_w: 1102.0
+      - name: 열풍약
+        min_w: 1286.0
+        max_w: 1800.0
+        center_w: 1470.0
+      - name: 열풍강
+        min_w: 1800.0
+        max_w: null
+        center_w: 2130.0
+
+  선풍기:
+    simple_mode: true  # 모드 간 W 차이 9~11W — NILM 노이즈 이내, 서브모드 구분 불가 → '작동' 반환
+    states:
+      - name: 약
+        min_w: 0.0
+        max_w: 22.6
+        center_w: 18.0
+      - name: 중
+        min_w: 22.6
+        max_w: 32.9
+        center_w: 27.8
+      - name: 강
+        min_w: 32.9
+        max_w: null
+        center_w: 38.5
+
+  전자레인지:
+    states:
+      - name: 대기
+        min_w: 0.0
+        max_w: 692.0
+        center_w: 22.8
+      - name: 저출력
+        min_w: 692.0
+        max_w: 996.0
+        center_w: 904.8
+      - name: 고출력
+        min_w: 996.0
+        max_w: null
+        center_w: 1132.9
+
+  TV:
+    states:
+      - name: 대기
+        min_w: 0.0
+        max_w: 27.8
+        center_w: 9.3
+      - name: 시청
+        min_w: 27.8
+        max_w: null
+        center_w: 80.0
+
+  식기세척기:
+    tda_mode: true   # TDA-K=3, WINDOW=2048 (68s) — 세척/열풍건조 W 차이 2W → TDA 전용 구분
+    states:
+      - name: 예비헹굼
+        min_w: 0.0
+        max_w: 420.0
+        center_w: 331.7
+      - name: 세척
+        min_w: 420.0
+        max_w: null
+        center_w: 508.0
+      - name: 열풍건조      # 세척과 W 동일대(510.1W) — TDA fingerprint로만 구분 (fallback 불가)
+        min_w: 420.0
+        max_w: null
+        center_w: 510.1
+
+  온수매트:
+    states:
+      - name: 저온
+        min_w: 0.0
+        max_w: 130.8
+        center_w: 62.2
+      - name: 중온
+        min_w: 130.8
+        max_w: 301.6
+        center_w: 199.4
+      - name: 고온
+        min_w: 301.6
+        max_w: null
+        center_w: 403.7
+
+  전기밥솥:
+    tda_mode: true   # TDA-K=2 = W-K=2 일치 (W차이 355W로 W-range도 유효)
+    states:
+      - name: 보온
+        min_w: 0.0
+        max_w: 608.8
+        center_w: 82.6
+      - name: 취사
+        min_w: 608.8
+        max_w: null
+        center_w: 1135.0
+
+  전기장판:
+    tda_mode: true   # TDA-K=2 (W차이 2.8W — W-range 불가, TDA가 추가 펄스 패턴 구분)
+    states:
+      - name: 약
+        min_w: 0.0
+        max_w: 76.5
+        center_w: 41.4
+      - name: 강
+        min_w: 76.5
+        max_w: null
+        center_w: 111.6
+
+  전기포트:
+    states:
+      - name: 보온
+        min_w: 0.0
+        max_w: 583.8
+        center_w: 133.0
+      - name: 약끓임
+        min_w: 583.8
+        max_w: 1153.5
+        center_w: 1034.6
+      - name: 중끓임
+        min_w: 1153.5
+        max_w: 1486.8
+        center_w: 1272.3
+      - name: 강끓임
+        min_w: 1486.8
+        max_w: null
+        center_w: 1701.3
+
+  진공청소기:
+    states:
+      - name: 약
+        min_w: 0.0
+        max_w: 916.3
+        center_w: 644.3
+      - name: 강
+        min_w: 916.3
+        max_w: null
+        center_w: 1188.2
+
+  컴퓨터:
+    states:
+      - name: 대기
+        min_w: 0.0
+        max_w: 95.4
+        center_w: 33.6
+      - name: 사용중
+        min_w: 95.4
+        max_w: null
+        center_w: 157.2
+
+  인덕션:
+    states:
+      - name: 대기
+        min_w: 0.0
+        max_w: 553.8
+        center_w: 6.9
+      - name: 약불
+        min_w: 553.8
+        max_w: 1456.8
+        center_w: 1100.6
+      - name: 중불
+        min_w: 1456.8
+        max_w: 2409.8
+        center_w: 1813.0
+      - name: 강불
+        min_w: 2409.8
+        max_w: null
+        center_w: 3006.5
+
+  무선공유기:
+    states:
+      - name: 작동
+        min_w: 0.0
+        max_w: null
+        center_w: 6.3  # EDA: 4피크 전부 5.4~7.1W 이내 → 단일 상태
