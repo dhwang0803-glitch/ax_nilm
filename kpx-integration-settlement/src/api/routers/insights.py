@@ -170,6 +170,13 @@ class ReviewDecision(BaseModel):
     note: str = ""
 
 
+@router.delete("/insights/cache")
+def clear_insights_cache():
+    """개발용: 인메모리 인사이트 캐시를 즉시 비움."""
+    _cache.clear()
+    return {"cleared": True}
+
+
 @router.post("/insights/review")
 def insights_review(body: ReviewDecision):
     """보류 중인 이상 이벤트 검토 결과를 제출해 그래프를 재개한다.

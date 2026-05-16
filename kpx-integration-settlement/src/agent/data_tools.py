@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
+
+from . import ontology
 
 logger = logging.getLogger(__name__)
 
@@ -1308,35 +1310,108 @@ def _db_cashback_history(conn, household_id: str) -> dict[str, Any]:
 
 
 def _db_dashboard_summary(household_id: str) -> dict[str, Any]:
-    conn1 = _get_db_conn()
-    tariff = _db_tariff_info(conn1, household_id) if conn1 else {}
-    conn2 = _get_db_conn()
-    cb     = _db_cashback_history(conn2, household_id) if conn2 else {}
+    conn = _get_db_conn()
+    if not conn:
+        return {
+            "summary": "DB 연결 없음",
+            "raw": {
+                "month": "", "monthly_kwh_so_far": 0, "baseline_kwh": None,
+                "cashback_qualifies": False, "cashback_expected_krw": 0,
+                "notification_count": 0, "cashback_detail": {},
+            },
+        }
 
-    tariff_raw  = tariff.get("raw", {})
-    mtd_kwh     = tariff_raw.get("current_month_kwh", 0)
-    cb_records  = cb.get("raw", [])
-    current_rec = cb_records[-1] if cb_records else {}
-    baseline    = current_rec.get("baseline_kwh")
-    qualifies   = (
-        baseline is not None and mtd_kwh < baseline * 0.97
+    # 단일 연결로 월별 전력 합계 전체 조회 (연결 실패 이중화 방지)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                DATE_TRUNC('month', hour_bucket AT TIME ZONE 'Asia/Seoul') AS month,
+                ROUND(SUM(energy_wh)::numeric / 1000.0, 1) AS total_kwh
+            FROM power_1hour
+            WHERE household_id = %s AND channel_num = 1
+            GROUP BY month ORDER BY month
+            """,
+            (household_id,),
+        )
+        rows = cur.fetchall()
+    conn.close()
+
+    if not rows:
+        return {
+            "summary": f"소비 데이터 없음: {household_id}",
+            "raw": {
+                "month": "", "monthly_kwh_so_far": 0, "baseline_kwh": None,
+                "cashback_qualifies": False, "cashback_expected_krw": 0,
+                "notification_count": 0, "cashback_detail": {},
+            },
+        }
+
+    kwh_list = [(r[0].strftime("%Y-%m"), float(r[1] or 0)) for r in rows]
+    max_month_str = kwh_list[-1][0]
+    mtd_kwh       = kwh_list[-1][1]
+
+    # 현재 데이터 월 기준으로 직전 최대 12개월 평균 → baseline
+    prior = [kwh for _, kwh in kwh_list[max(0, len(kwh_list) - 13) : len(kwh_list) - 1]]
+    baseline = round(sum(prior) / len(prior), 1) if len(prior) >= 1 else None
+
+    import sys
+    print(
+        f"[dashboard_debug] hh={household_id} months={len(kwh_list)} "
+        f"max_month={max_month_str} mtd={mtd_kwh} prior_months={len(prior)} "
+        f"baseline={baseline}",
+        file=sys.stderr, flush=True,
     )
-    exp_krw     = round((baseline - mtd_kwh) * 100) if qualifies else 0
 
+    # 현재 달(오늘 월)이면 부분 월 투영, 이전 완성 월이면 그대로 사용
+    today = date.today()
+    if baseline and mtd_kwh > 0:
+        if max_month_str == today.strftime("%Y-%m"):
+            elapsed_days  = max(1, today.day)
+            projected_kwh = round(mtd_kwh / elapsed_days * 30, 1)
+        else:
+            projected_kwh = mtd_kwh
+        savings_kwh = round(baseline - projected_kwh, 1)
+    elif baseline:
+        projected_kwh = baseline
+        savings_kwh   = 0.0
+    else:
+        projected_kwh = mtd_kwh
+        savings_kwh   = 0.0
+
+    savings_pct = round(savings_kwh / baseline * 100, 1) if baseline else 0.0
+    qualifies   = savings_pct >= 3.0 and savings_kwh > 0
+
+    # 온톨로지 기반 단가
+    cb_rate = ontology.cashback_fallback_rate()
+    for threshold, rate in ontology.cashback_tiers():
+        if (savings_pct / 100) >= threshold:
+            cb_rate = rate
+            break
+    exp_krw = round(savings_kwh * cb_rate) if qualifies else 0
+
+    cashback_detail = {
+        "baseline_kwh":           baseline,
+        "projected_kwh":          projected_kwh,
+        "savings_kwh":            max(savings_kwh, 0.0),
+        "savings_pct":            max(savings_pct, 0.0),
+        "qualifies_for_cashback": qualifies,
+        "expected_cashback_krw":  exp_krw,
+    }
     summary = (
-        f"이달 사용량 {mtd_kwh}kWh. "
+        f"이달 사용량 {mtd_kwh}kWh (예상 {projected_kwh}kWh). "
         f"캐시백 {'예상 ' + f'{exp_krw:,}원' if qualifies else '미달 전망'}."
     )
     return {
         "summary": summary,
         "raw": {
-            "month":                 "current",
+            "month":                 max_month_str,
             "monthly_kwh_so_far":    mtd_kwh,
             "baseline_kwh":          baseline,
             "cashback_qualifies":    qualifies,
             "cashback_expected_krw": exp_krw,
             "notification_count":    0,
-            "cashback_detail":       {},
+            "cashback_detail":       cashback_detail,
         },
     }
 
@@ -1495,6 +1570,9 @@ def _calc_cashback_potential(
         return {"error": f"{reference_month} 집계중 데이터 없음", "code": "E_NO_CURRENT"}
 
     baseline_kwh = rec["baseline_kwh"]
+    if baseline_kwh is None:
+        return {"error": f"{reference_month} 기준선 미설정", "code": "E_NO_BASELINE"}
+
     mtd_kwh      = tariff_data.get("raw", {}).get("current_month_kwh", 0)
 
     from datetime import date as _date

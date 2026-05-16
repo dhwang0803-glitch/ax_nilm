@@ -46,7 +46,7 @@ def cashback_tracker():
     current_rec = next(
         (r for r in history_records if r.get("month") == "2026-04"), None
     )
-    baseline_kwh = float(current_rec.get("baseline_kwh", 0)) if current_rec else 0.0
+    baseline_kwh = float(current_rec.get("baseline_kwh") or 0) if current_rec else 0.0
     target_savings_pct = 3.0
     target_cashback_kwh = round(baseline_kwh * (target_savings_pct / 100), 1)
     # KEPCO 에너지캐시백 기준: 절감 kWh × 단가
@@ -63,7 +63,7 @@ def cashback_tracker():
 
     # Weekly
     week = get_consumption_summary(hh, period="week")
-    daily_avg = float(week.get("raw", {}).get("daily_avg_kwh", 6.0))
+    daily_avg = float(week.get("raw", {}).get("daily_avg_kwh") or 6.0)
     weekly_days = _make_weekly(daily_avg)
 
     # Monthly from history

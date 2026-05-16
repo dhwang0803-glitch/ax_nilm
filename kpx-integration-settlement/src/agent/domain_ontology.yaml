@@ -37,12 +37,16 @@ appliances:
       - 꺼
       - 끄
       - 미사용
+      - 단축
+      - 줄이기
+      - 줄여
 
   # 냉방 가전 (hot_threshold 이상 시즌에만 권고 방향 확인)
   cooling:
     names:
       - 에어컨
       - 선풍기
+      - 제습기
 
   # 난방 가전 (cold_threshold 이하 시즌에만 권고 방향 확인)
   heating:
@@ -54,16 +58,18 @@ appliances:
       - 전기히터
 
   # 권고 가이드라인 (report_agent 시스템 프롬프트 생성에 사용)
+  # ※ NILM은 전력 파형으로 가동 시간·소비량·대기전력만 측정 가능.
+  #   온도·풍속·화력 등 기기 내부 설정값은 측정 불가 → template에 포함 금지.
   guidance:
     - names: [에어컨]
-      direction: 설정 조정
-      template: "온도 1°C 조정"
+      direction: 사용 시간 단축
+      template: "일일 가동 시간 단축"
     - names: [전기장판, 온수매트]
-      direction: 설정 조정
-      template: "온도 단계 낮추기"
+      direction: 사용 시간 단축
+      template: "취침 전 사용 시간 단축"
     - names: [인덕션]
-      direction: 설정 조정
-      template: "화력 단계 낮추기"
+      direction: 사용 시간 단축
+      template: "가동 시간 단축"
     - names: [전기포트]
       direction: 효율 사용
       template: "필요한 양만"
@@ -74,20 +80,23 @@ appliances:
       direction: 효율 사용
       template: "모아서 한 번에"
     - names: [TV, 컴퓨터]
-      direction: 절전 설정
-      template: "절전 모드·타이머"
+      direction: 사용 시간 단축
+      template: "시청·사용 시간 단축"
     - names: [선풍기]
-      direction: 절전 설정
-      template: "풍속 낮추기·타이머"
+      direction: 사용 시간 단축
+      template: "가동 시간 단축·타이머"
+    - names: [제습기]
+      direction: 사용 시간 단축
+      template: "가동 시간 단축·타이머"
     - names: [공기청정기]
-      direction: 절전 설정
-      template: "자동·취침 모드"
+      direction: 사용 시간 단축
+      template: "가동 시간 단축"
     - names: [냉장고, 김치냉장고]
-      direction: 상시 가동 점검
-      template: "온도 최적화·도어·코일 점검"
+      direction: 성능 점검
+      template: "도어·코일 점검"
     - names: [무선공유기, 셋톱박스]
-      direction: 미사용 시 차단
-      template: "장시간 미사용 시 전원 차단"
+      direction: 대기전력 절감
+      template: "대기전력 절감"
 
 # ── 전역 금지 표현 (action·title 공통) ───────────────────────────────────────
 safety:
