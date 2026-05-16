@@ -9,6 +9,7 @@ Week 1: 3가구 mock 데이터로 구현. 실제 DB·NILM·KMA·KEPCO API 연결
 """
 from __future__ import annotations
 
+import calendar
 import logging
 import os
 from datetime import date, timedelta
@@ -1353,20 +1354,22 @@ def _db_dashboard_summary(household_id: str) -> dict[str, Any]:
         }
 
     # 단일 연결로 월별 전력 합계 전체 조회 (연결 실패 이중화 방지)
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT
-                DATE_TRUNC('month', hour_bucket AT TIME ZONE 'Asia/Seoul') AS month,
-                ROUND(SUM(energy_wh)::numeric / 1000.0, 1) AS total_kwh
-            FROM power_1hour
-            WHERE household_id = %s AND channel_num = 1
-            GROUP BY month ORDER BY month
-            """,
-            (household_id,),
-        )
-        rows = cur.fetchall()
-    conn.close()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    DATE_TRUNC('month', hour_bucket AT TIME ZONE 'Asia/Seoul') AS month,
+                    ROUND(SUM(energy_wh)::numeric / 1000.0, 1) AS total_kwh
+                FROM power_1hour
+                WHERE household_id = %s AND channel_num = 1
+                GROUP BY month ORDER BY month
+                """,
+                (household_id,),
+            )
+            rows = cur.fetchall()
+    finally:
+        conn.close()
 
     if not rows:
         return {
@@ -1386,12 +1389,9 @@ def _db_dashboard_summary(household_id: str) -> dict[str, Any]:
     prior = [kwh for _, kwh in kwh_list[max(0, len(kwh_list) - 13) : len(kwh_list) - 1]]
     baseline = round(sum(prior) / len(prior), 1) if len(prior) >= 1 else None
 
-    import sys
-    print(
-        f"[dashboard_debug] hh={household_id} months={len(kwh_list)} "
-        f"max_month={max_month_str} mtd={mtd_kwh} prior_months={len(prior)} "
-        f"baseline={baseline}",
-        file=sys.stderr, flush=True,
+    logger.debug(
+        "[dashboard] hh=%s months=%d max_month=%s mtd=%.1f prior=%d baseline=%s",
+        household_id, len(kwh_list), max_month_str, mtd_kwh, len(prior), baseline,
     )
 
     # 현재 달(오늘 월)이면 부분 월 투영, 이전 완성 월이면 그대로 사용
@@ -1399,7 +1399,8 @@ def _db_dashboard_summary(household_id: str) -> dict[str, Any]:
     if baseline and mtd_kwh > 0:
         if max_month_str == today.strftime("%Y-%m"):
             elapsed_days  = max(1, today.day)
-            projected_kwh = round(mtd_kwh / elapsed_days * 30, 1)
+            days_in_month = calendar.monthrange(today.year, today.month)[1]
+            projected_kwh = round(mtd_kwh / elapsed_days * days_in_month, 1)
         else:
             projected_kwh = mtd_kwh
         savings_kwh = round(baseline - projected_kwh, 1)
@@ -1413,10 +1414,11 @@ def _db_dashboard_summary(household_id: str) -> dict[str, Any]:
     savings_pct = round(savings_kwh / baseline * 100, 1) if baseline else 0.0
     qualifies   = savings_pct >= 3.0 and savings_kwh > 0
 
-    # 온톨로지 기반 단가
+    # 온톨로지 기반 단가 — tier 매칭은 음수 절감 제외
     cb_rate = ontology.cashback_fallback_rate()
+    savings_pct_clamped = max(savings_pct, 0.0)
     for threshold, rate in ontology.cashback_tiers():
-        if (savings_pct / 100) >= threshold:
+        if (savings_pct_clamped / 100) >= threshold:
             cb_rate = rate
             break
     exp_krw = round(savings_kwh * cb_rate) if qualifies else 0

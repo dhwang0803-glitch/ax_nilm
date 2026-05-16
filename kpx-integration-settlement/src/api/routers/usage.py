@@ -52,17 +52,12 @@ def usage_analysis():
     if not hourly_data:
         hourly_data = [{"hour": h, "average": 0.0, "today": 0.0} for h in range(24)]
 
-    week_delta_pct = round((tw_total - pw_total) / pw_total * 100, 1) if pw_total else 0.0
     appliance_breakdown = [
         {
             "name": a["appliance"],
             "kwh": round(a["daily_kwh"], 2),
             "sharePercent": round(a["share_pct"], 1),
-            "weekOverWeekPercent": (
-                a["week_over_week_pct"]
-                if a.get("week_over_week_pct") is not None
-                else week_delta_pct
-            ),
+            "weekOverWeekPercent": a.get("week_over_week_pct"),
         }
         for a in daily_summary
     ]

@@ -173,6 +173,8 @@ class ReviewDecision(BaseModel):
 @router.delete("/insights/cache")
 def clear_insights_cache():
     """개발용: 인메모리 인사이트 캐시를 즉시 비움."""
+    if os.getenv("ENV", "production") not in ("development", "dev", "local"):
+        raise HTTPException(status_code=403, detail="개발 환경에서만 사용 가능합니다.")
     _cache.clear()
     return {"cleared": True}
 
