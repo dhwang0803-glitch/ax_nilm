@@ -57,7 +57,7 @@ def usage_analysis():
             "name": a["appliance"],
             "kwh": round(a["daily_kwh"], 2),
             "sharePercent": round(a["share_pct"], 1),
-            "weekOverWeekPercent": 0,  # no historical comparison available yet
+            "weekOverWeekPercent": a.get("week_over_week_pct"),
         }
         for a in daily_summary
     ]
