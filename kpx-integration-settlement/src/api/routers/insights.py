@@ -299,44 +299,53 @@ def insights_summary(refresh: bool = False):
             },
         )
     diag_map = {d.event_id: d for d in result.anomaly_diagnoses}
+    raw_events_map = {e.get("event_id"): e for e in raw_events if e.get("event_id")}
     # LLM이 진단을 반환한 경우 — "정상"으로 판정해 diag_map에 없는 이벤트는 노출 제외.
     # LLM이 빈 배열을 반환한 경우 (fallback 등) — 분류 정보 없이 raw_events 전부 노출.
     use_llm_filter = bool(result.anomaly_diagnoses)
 
     mode_refs = _get_mode_refs(hh)
 
-    def _to_highlight(i: int, e: dict) -> dict | None:
-        """anomalyHighlights는 '얼마나 늘었는지' 정량 한 줄만 — 자세한 cause·action은 recommendations로."""
-        if "분전반" in e.get("appliance", e.get("appliance_name", "")):
+    def _diag_to_highlight(i: int, diag) -> dict | None:
+        """진단 기준 → highlight. raw_event 있으면 정량 headline·detectedAt 보강, 없으면(WoW 합성) diag 자체에서 생성."""
+        if diag.category == "정상":
             return None
-        eid = e.get("event_id", f"evt-{i}")
-        diag = diag_map.get(eid)
-        if use_llm_filter and diag is None:
+        evt = raw_events_map.get(diag.event_id) or {}
+        appliance = evt.get("appliance") or evt.get("appliance_name") or diag.diagnosis.split()[0]
+        if "분전반" in appliance:
             return None
-        if diag and diag.category == "정상":
-            return None
-
-        appliance = e.get("appliance", e.get("appliance_name", "알 수 없음"))
-        # 정량 headline 우선 — baseline 비교 가능하면 "N배·N%" 같은 구체 수치 노출.
-        quantified = _quantify_headline(appliance, e, mode_refs)
-        if quantified:
-            headline = quantified
-        elif diag:
-            headline = diag.diagnosis
-        else:
-            headline = e.get("description") or f"{appliance} 전력 사용이 평소보다 늘어났어요"
-
+        quantified = _quantify_headline(appliance, evt, mode_refs) if evt else None
+        headline = quantified or diag.diagnosis
         return {
-            "id":         eid,
+            "id":         diag.event_id or f"diag-{i}",
             "appliance":  appliance,
-            "severity":   _SEVERITY_MAP.get(e.get("severity", "info"), "low"),
-            "category":   diag.category if diag else "이상",
+            "severity":   _SEVERITY_MAP.get(evt.get("severity", "info"), "low") if evt else "low",
+            "category":   diag.category,
             "headline":   headline,
             "cause":      "",  # 자세한 원인·확인 행동은 추천 조치 description에 노출 (중복 제거)
-            "detectedAt": _humanize_kst(e.get("detected_at", "")),
+            "detectedAt": _humanize_kst(evt.get("detected_at", "")) if evt else "최근 7일",
         }
 
-    anomaly_highlights = [h for i, e in enumerate(raw_events) if (h := _to_highlight(i, e)) is not None]
+    if use_llm_filter:
+        anomaly_highlights = [h for i, d in enumerate(result.anomaly_diagnoses) if (h := _diag_to_highlight(i, d)) is not None]
+    else:
+        # LLM이 빈 배열 → raw_events 전부 노출 (legacy 동작)
+        def _evt_only_highlight(i: int, e: dict) -> dict | None:
+            if "분전반" in e.get("appliance", e.get("appliance_name", "")):
+                return None
+            appliance = e.get("appliance", e.get("appliance_name", "알 수 없음"))
+            quantified = _quantify_headline(appliance, e, mode_refs)
+            headline = quantified or e.get("description") or f"{appliance} 전력 사용이 평소보다 늘어났어요"
+            return {
+                "id":         e.get("event_id", f"evt-{i}"),
+                "appliance":  appliance,
+                "severity":   _SEVERITY_MAP.get(e.get("severity", "info"), "low"),
+                "category":   "이상",
+                "headline":   headline,
+                "cause":      "",
+                "detectedAt": _humanize_kst(e.get("detected_at", "")),
+            }
+        anomaly_highlights = [h for i, e in enumerate(raw_events) if (h := _evt_only_highlight(i, e)) is not None]
 
     _SAVING_SUFFIX = re.compile(r"\s*월\s*기준\s*약\s*[\d,]+\s*원\s*절약(이\s*예상됩니다|할\s*수\s*있어요)\.?\s*$")
 
@@ -361,8 +370,8 @@ def insights_summary(refresh: bool = False):
         if diag is None or not diag.action:
             continue
         savings = diag.expected_savings_krw_per_month or 0
-        if savings <= 0:
-            continue  # 0원 권고는 사용자에게 의미 없음 — 제외
+        if savings < 100:
+            continue  # 100원 미만 권고는 사용자 체감 가치 낮음 — 제외
         app = h["appliance"]
         diag_recs.append({
             "id":                 f"diag-{i}",

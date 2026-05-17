@@ -95,6 +95,7 @@ def _slim_nilm_output(nilm: dict[str, Any]) -> dict[str, Any]:
         "anomaly_events":  anomaly_events,
         "mode_references": mode_refs_slim,
         "recent_events":   recent_slim,
+        "appliance_wow":   nilm.get("appliance_wow") or [],
     }
 
 
@@ -121,6 +122,82 @@ def _build_fallback(nilm_output: dict[str, Any]) -> dict[str, Any]:
 # ── 진단 후처리 ────────────────────────────────────────────────────────────────
 
 _USAGE_CHANGE_SINGLE_EVENT_THRESHOLD = 1  # 같은 가전·모드 recent_events가 이 이하면 단발 — 사용변화 우선
+
+
+# 가전 매칭 실패 fallback 시 유형별로 cause·action 문구를 분기.
+# 사용자에게 "평소와 다른 패턴이 있는지 확인하세요" 같은 자가진단 숙제를 떠넘기지 않고,
+# 유형이 알려주는 가전별 구체 확인 행동을 제시한다.
+_FALLBACK_BY_TYPE: dict[str, dict[str, str]] = {
+    "A": {  # 상시 가동: 컴프레서·문 패킹 등 성능 신호
+        "cause":  "{app} 전력 사용이 평소보다 늘었어요. 문이 잘 닫히는지, 뒤쪽에 먼지가 쌓여 있지 않은지 확인해 보세요.",
+        "hint":   "문이 잘 닫히는지, 뒤쪽에 먼지가 쌓여 있지 않은지 확인해 보세요.",
+        "action": "{app} 문 닫힘과 뒤쪽 먼지 확인",
+    },
+    "B": {  # 다단계 사이클: 한 사이클이 한 단위 — 양·횟수가 핵심
+        "cause":  "{app} 사용이 평소보다 늘었어요. 한 번에 처리하는 양이 평소보다 적지는 않은지, 여러 번 나눠 돌리는 대신 모아서 한 번에 쓸 수 있는지 확인해 보세요.",
+        "hint":   "한 번에 처리하는 양이 적지는 않은지, 여러 번 나눠 돌리는 대신 모아서 한 번에 쓸 수 있는지 확인해 보세요.",
+        "action": "{app} 사이클 횟수 점검",
+    },
+    "C": {  # 단발 사용
+        "cause":  "{app}을(를) 평소보다 자주 사용한 것으로 보여요. 짧은 시간 여러 번 쓰기보다 한 번에 모아서 쓰면 전기료를 줄일 수 있어요.",
+        "hint":   "짧은 시간 여러 번 쓰기보다 한 번에 모아서 쓰면 전기료를 줄일 수 있어요.",
+        "action": "{app} 사용 빈도 확인",
+    },
+    "D": {  # 장시간 세션: 시간은 사용자 선택 — 정보성 안내
+        "cause":  "{app} 사용 시간이 평소보다 늘었어요. 의도하신 사용이라면 그대로 두셔도 되고, 가동 시간을 30분~1시간만 줄여도 전기료가 줄어요.",
+        "hint":   "의도하신 사용이라면 그대로 두셔도 되고, 가동 시간을 30분~1시간만 줄여도 전기료가 줄어요.",
+        "action": "{app} 사용 시간 점검",
+    },
+}
+
+
+def _fallback_diagnosis_text(app: str, atype: str, mode: str = "") -> tuple[str, str, str]:
+    """가전 매칭 실패 시 유형별 fallback (diagnosis, cause, action) 반환."""
+    tpl = _FALLBACK_BY_TYPE.get(atype) or _FALLBACK_BY_TYPE["C"]
+    diag = f"{app} 사용이 평소보다 늘어났어요"
+    cause = tpl["cause"].format(app=app)
+    action = tpl["action"].format(app=app)
+    if mode and atype in ("C", "D"):
+        diag = f"{app} {mode} 사용이 늘었어요"
+    return diag, cause, action
+
+
+# ── WoW 트랙 → 합성 diagnosis ───────────────────────────────────────────────
+# 코드에서 직접 생성 (LLM 우회). 같은 가전이 LLM 진단(피크/에너지이상)에 이미 잡혔으면 스킵.
+
+_WOW_SAVINGS_RATE = 0.30  # "사용변화" 절감 잠재 — 사용자가 30% 줄였을 때
+
+
+def _build_wow_diagnoses(appliance_wow: list[dict], existing_apps: set[str], unit_krw: int) -> list[dict]:
+    """appliance_wow 목록 → AnomalyDiagnosis dict 목록 (category='사용변화').
+
+    cause는 "지난주 대비 N% 증가 사실 + 유형별 확인 행동(hint)" 2단 구성.
+    Fallback 템플릿의 cause(전체 문장)는 LLM 우회 경로에 중복이라 hint만 사용.
+    """
+    out: list[dict] = []
+    for item in appliance_wow or []:
+        app = item.get("appliance") or ""
+        if not app or app in existing_apps:
+            continue
+        atype = item.get("type") or ontology.appliance_type(app)
+        cur_kwh = float(item.get("this_week_daily_kwh") or 0)
+        wow_pct = float(item.get("wow_pct") or 0)
+
+        tpl = _FALLBACK_BY_TYPE.get(atype) or _FALLBACK_BY_TYPE["C"]
+        diag = f"{app} 사용이 평소보다 늘어났어요"
+        cause = f"지난주 같은 요일보다 약 {int(round(wow_pct))}% 늘었어요. " + tpl["hint"]
+        action = tpl["action"].format(app=app)
+
+        savings = int(cur_kwh * _WOW_SAVINGS_RATE * 30 * unit_krw)
+        out.append({
+            "event_id": f"wow:{app}",
+            "category": "사용변화",
+            "diagnosis": diag,
+            "cause": cause[:160],
+            "action": action,
+            "expected_savings_krw_per_month": max(0, savings),
+        })
+    return out
 
 # baseline 자체가 작은 경우(GCS sample 부족 가구) 비율이 폭주 → 사용자에 보일 땐 클램핑.
 _MULTIPLIER_CLAMP = 10.0       # 10배 이상은 "훨씬 더"로 표시
@@ -234,13 +311,8 @@ def _polish_diagnoses(diagnoses: list[dict], payload: dict[str, Any]) -> list[di
             return False
 
         if app and (app not in diag_text or _mentions_other_app(diag_text) or _mentions_other_app(cause_text)):
-            # 조사 회피 표현 — 받침 무관하게 자연스러움
-            diag_text = f"{app} 전력 사용이 평소보다 늘어났어요"
-            if mode:
-                cause_text = f"{app} {mode} 사용이 평소보다 늘어난 것으로 관찰됐어요. 사용 시간이 너무 길지 않은지, 평소와 다른 사용 패턴이 있는지 확인해 보세요."
-            else:
-                cause_text = f"{app} 사용량이 평소보다 늘어난 것으로 관찰됐어요. 평소와 다른 사용 패턴이 있는지, 기기 상태가 정상인지 확인해 보세요."
-            action_text = f"{app} 사용 상태 확인"
+            atype = ontology.appliance_type(app)
+            diag_text, cause_text, action_text = _fallback_diagnosis_text(app, atype, mode)
 
         # LLM 응답에 "이(가)" 같은 양쪽 조사 패턴이 노출되면 받침 검사 후 단일 조사로 치환
         diag_text  = _fix_korean_josa(diag_text)
@@ -319,6 +391,7 @@ _BANNED_TITLE_KEYWORDS = (
     "필요할 때만 사용", "사용 점검", "전력 절감", "효율적 사용", "사용 줄이기",
 )
 _DEFAULT_TIER_KRW = 140  # 단가 정보 부재 시 보수적 fallback (2단계 기준)
+_MIN_VISIBLE_SAVINGS_KRW = 100  # 이 미만 권고는 사용자 체감 가치 낮음 — 노출 제외
 
 
 def _resolve_unit_krw(cashback: dict[str, Any]) -> int:
@@ -380,6 +453,10 @@ def _polish_recommendations(recs: list[dict], payload: dict[str, Any]) -> list[d
 
 # ── 진단 분류 가이드 ──────────────────────────────────────────────────────────
 _DIAGNOSIS_CATEGORY_GUIDE = """\
+## 입력 트랙 2종 [먼저 인지]
+- **피크 트랙** (`anomaly_events`/`anomaly_flags`): 이벤트 레벨 — 진짜 이상 신호 (피크스파이크·에너지이상 등). 본 호출에서 진단 대상.
+- **WoW 트랙** (`appliance_wow`): 가전별 전주 대비 일일 kWh 증가 — 사용 패턴 변화 신호. **코드에서 이미 합성 진단을 생성하므로 LLM은 다루지 말 것.** anomaly_diagnoses 출력에 appliance_wow 항목을 포함시키지 말 것 (중복).
+
 ## 진단 카테고리 [최우선 규칙]
 모든 anomaly_flag/anomaly_event를 아래 3가지 중 하나로 분류한다. 분류 기준을 엄격히 지킬 것.
 
@@ -657,6 +734,18 @@ def report_node(state: dict[str, Any]) -> dict[str, Any]:
         logger.exception("진단 호출 실패 — 빈 배열로 진행 (household=%s): %s", hh, e)
 
     diagnoses = _polish_diagnoses(diagnoses, payload)
+
+    # WoW 트랙: LLM 진단(피크/에너지이상)이 이미 다룬 가전은 스킵하고 나머지를 코드에서 합성.
+    _anomaly_evt_map = {e.get("event_id"): e for e in (nilm_output.get("anomaly_events") or [])}
+    existing_apps = {
+        (_anomaly_evt_map.get(d.get("event_id")) or {}).get("appliance")
+        for d in diagnoses
+    }
+    existing_apps.discard(None)
+    existing_apps.discard("")
+    wow_items = (nilm_output.get("appliance_wow") or [])
+    unit_krw = _resolve_unit_krw(cashback_output)
+    diagnoses = diagnoses + _build_wow_diagnoses(wow_items, existing_apps, unit_krw)
 
     # 권고 호출은 진단 결과를 함께 입력 — "방금 진단한 가전 기준의 구체 권고" 유도
     rec_payload = {**payload, "diagnoses_already_made": diagnoses}
