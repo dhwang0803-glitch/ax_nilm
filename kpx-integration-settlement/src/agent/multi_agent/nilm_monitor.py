@@ -17,6 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .. import ontology
 from ..data_tools import (
     get_anomaly_events,
     get_consumption_hourly,
@@ -51,24 +52,11 @@ class _NilmLLMOutput(BaseModel):
     anomaly_flags: list[AnomalyFlag] = Field(default_factory=list)
 
 
-# ── 가전 유형 분류 ────────────────────────────────────────────────────────────
-# A: 상시 가동 — 이벤트 비교 제외, 피크스파이크만
-# B: 다단계 자동 사이클 — 이벤트 비교 제외, 피크스파이크만
-# C: 단발 사용 — 전부 적용 (기본값)
-# D: 장시간 세션 — 장시간 제외, 나머지 적용
-
-_APPLIANCE_TYPE: dict[str, str] = {
-    "일반 냉장고": "A", "냉장고": "A", "김치냉장고": "A", "무선공유기/셋톱박스": "A",
-    "세탁기": "B", "식기세척기/건조기": "B", "식기세척기": "B", "의류건조기": "B",
-    "에어컨": "D", "제습기": "D", "전기장판/담요": "D", "온수매트": "D",
-    "TV": "D", "컴퓨터": "D", "컴퓨터(데스크탑)": "D", "선풍기": "D", "공기청정기": "D",
-    "전기밥솥": "D", "인덕션(전기레인지)": "D", "인덕션": "D",
-    "전자레인지": "C", "전기포트": "C", "헤어드라이기": "C",
-    "진공청소기": "C", "진공청소기(유선)": "C", "전기다리미": "C", "에어프라이어": "C",
-}
-_DEFAULT_TYPE = "C"
+# 가전 유형 분류(A/B/C/D)는 ontology.appliance_type()으로 조회. YAML 단일 출처.
 
 # ── 사전 필터링 상수 ──────────────────────────────────────────────────────────
+
+_MAIN_BREAKER: frozenset[str] = frozenset({"메인 분전반", "메인분전반", "MAIN"})
 
 _STANDBY_W_THRESHOLD = 5.0
 _MIN_DURATION_FLOOR_MIN = 5.0
@@ -77,6 +65,14 @@ _MICRO_SEGMENT_ENERGY_WH = 5.0
 _MICRO_SEGMENT_SAMPLE_MIN = 100
 _PEAK_W_SPIKE = 1000.0
 _OUTLIER_ENERGY_RATIO = 5.0
+
+# ── WoW 트랙 임계값 (유형별) ─────────────────────────────────────────────────
+# A(상시): WoW 의미 없음 — peak 트랙으로만 감지.
+# B(사이클)/D(장시간): 변동 폭 크므로 +50% 이상만 표시.
+# C(단발): 변동 작아 +30% 컷.
+_WOW_PCT_THRESHOLD: dict[str, float | None] = {"A": None, "B": 50.0, "C": 30.0, "D": 50.0}
+_WOW_MIN_DAILY_KWH = 0.5  # 신규 가전·잡음 가드 (전주 0kWh → wow_pct 무한대 방지)
+_WOW_MAX_ITEMS = 5
 
 _MODE_SYNONYMS: dict[str, str] = {
     "사용중": "가동",
@@ -116,8 +112,7 @@ def _annotate_mode_refs(mode_refs: dict) -> dict:
             if 0 < avg_dur < 2.0:
                 entry["duration_threshold_min"] = _MIN_DURATION_FLOOR_MIN
             new_modes[_normalize_mode(mode_name)] = entry
-        atype = _APPLIANCE_TYPE.get(appliance, _DEFAULT_TYPE)
-        annotated[appliance] = {**ref, "modes": new_modes, "type": atype}
+        annotated[appliance] = {**ref, "modes": new_modes, "type": ontology.appliance_type(appliance)}
     return annotated
 
 
@@ -132,7 +127,7 @@ def _detect_absolute_anomalies(
     app_types: dict[str, str] = {}
     if isinstance(mode_refs, dict):
         for appliance, ref in mode_refs.items():
-            app_types[appliance] = ref.get("type", _DEFAULT_TYPE)
+            app_types[appliance] = ref.get("type") or ontology.appliance_type(appliance)
             for mode_name, mode_data in ref.get("modes", {}).items():
                 if mode_data.get("low_confidence"):
                     lc_modes.add((appliance, mode_name))
@@ -155,7 +150,7 @@ def _detect_absolute_anomalies(
         key = (evt.get("appliance", ""), evt.get("mode", ""))
         if key not in lc_modes:
             continue
-        atype = app_types.get(key[0], _DEFAULT_TYPE)
+        atype = app_types.get(key[0]) or ontology.appliance_type(key[0])
         peak = evt.get("peak_w") or 0
         energy = evt.get("energy_wh") or 0
         med = medians.get(key, 0)
@@ -182,6 +177,33 @@ def _detect_absolute_anomalies(
                 })
 
     return flags
+
+
+def _build_appliance_wow(daily_summary: list[dict]) -> list[dict]:
+    """가전별 전주 대비 사용량 증가를 유형별 임계로 필터링.
+
+    출력 항목은 모두 "사용변화" 트랙 (이상 아님). 평균 비교가 불안정한 A/B/D는 컷이 높고,
+    단발 사용인 C는 작은 변동도 의미가 있어 임계를 낮춤.
+    """
+    items: list[dict] = []
+    for row in daily_summary:
+        wow = row.get("week_over_week_pct")
+        cur = float(row.get("daily_kwh") or 0)
+        if wow is None or wow <= 0 or cur < _WOW_MIN_DAILY_KWH:
+            continue
+        app = row.get("appliance", "")
+        atype = ontology.appliance_type(app)
+        threshold = _WOW_PCT_THRESHOLD.get(atype)
+        if threshold is None or wow < threshold:
+            continue
+        items.append({
+            "appliance":          app,
+            "type":               atype,
+            "this_week_daily_kwh": round(cur, 2),
+            "wow_pct":            float(wow),
+        })
+    items.sort(key=lambda x: x["this_week_daily_kwh"], reverse=True)
+    return items[:_WOW_MAX_ITEMS]
 
 
 # ── 시스템 프롬프트 ─────────────────────────────────────────────────────────────
@@ -232,6 +254,16 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     mode_refs_raw  = mode_ref_data.get("raw", {})
     recent_evts    = recent_evt_data.get("raw", [])
 
+    # before_kw가 명시적으로 0(평소 미사용 → 신규 사용)일 때만 제외.
+    # 필드 자체가 없는 케이스(_db_anomaly_events 출력)는 통과해야 진단 대상에 포함됨.
+    raw_events = [e for e in raw_events if not ("before_kw" in e and (e.get("before_kw") or 0) == 0)]
+    # 메인 분전반은 집계 채널 — 모든 가전 분석 경로에서 제외
+    raw_events = [e for e in raw_events if e.get("appliance") not in _MAIN_BREAKER]
+    daily_summary = [item for item in daily_summary if item.get("appliance") not in _MAIN_BREAKER]
+    recent_evts = [e for e in recent_evts if e.get("appliance") not in _MAIN_BREAKER]
+    if isinstance(mode_refs_raw, dict):
+        mode_refs_raw = {k: v for k, v in mode_refs_raw.items() if k not in _MAIN_BREAKER}
+
     active_appliances = {item.get("appliance") for item in daily_summary if item.get("daily_kwh", 0) > 0}
     filtered_refs = {k: v for k, v in mode_refs_raw.items() if k in active_appliances} if isinstance(mode_refs_raw, dict) else mode_refs_raw
 
@@ -262,4 +294,5 @@ def nilm_monitor_node(state: dict[str, Any]) -> dict[str, Any]:
     output["anomaly_events"]   = raw_events
     output["mode_references"]  = annotated_refs if isinstance(annotated_refs, dict) else mode_refs_raw
     output["recent_events"]    = filtered_evts
+    output["appliance_wow"]    = _build_appliance_wow(daily_summary)
     return {"nilm_output": output}

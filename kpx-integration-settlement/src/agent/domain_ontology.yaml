@@ -57,6 +57,44 @@ appliances:
       - 히터
       - 전기히터
 
+  # 이상탐지 정책 분류 (A/B/C/D)
+  # nilm_monitor·report_agent가 가전별로 어떤 flag·WoW 임계를 적용할지 결정.
+  # 자세한 근거: nilm_monitoring_design_rationale.md §2
+  #   A: 상시 가동 — baseline 비교 무의미, 피크스파이크만
+  #   B: 다단계 사이클 — 단계별 변동 극심, 피크스파이크만
+  #   C: 단발 사용 — 전부 적용 (기본값)
+  #   D: 장시간 세션 — 장시간 제외, 시간 증가는 사용자 선택
+  detection_type:
+    default: C
+    map:
+      일반 냉장고: A
+      냉장고: A
+      김치냉장고: A
+      무선공유기/셋톱박스: A
+      세탁기: B
+      식기세척기/건조기: B
+      식기세척기: B
+      의류건조기: B
+      에어컨: D
+      제습기: D
+      전기장판/담요: D
+      온수매트: D
+      TV: D
+      컴퓨터: D
+      컴퓨터(데스크탑): D
+      선풍기: D
+      공기청정기: D
+      전기밥솥: D
+      인덕션(전기레인지): D
+      인덕션: D
+      전자레인지: C
+      전기포트: C
+      헤어드라이기: C
+      진공청소기: C
+      진공청소기(유선): C
+      전기다리미: C
+      에어프라이어: C
+
   # 권고 가이드라인 (report_agent 시스템 프롬프트 생성에 사용)
   # ※ NILM은 전력 파형으로 가동 시간·소비량·대기전력만 측정 가능.
   #   온도·풍속·화력 등 기기 내부 설정값은 측정 불가 → template에 포함 금지.
@@ -79,6 +117,9 @@ appliances:
     - names: [전기다리미]
       direction: 효율 사용
       template: "모아서 한 번에"
+    - names: [세탁기, 식기세척기, 의류건조기]
+      direction: 효율 사용
+      template: "빨래·식기 모아서 한 번에 (사이클 자주 돌리지 않기)"
     - names: [TV, 컴퓨터]
       direction: 사용 시간 단축
       template: "시청·사용 시간 단축"
@@ -93,10 +134,10 @@ appliances:
       template: "가동 시간 단축"
     - names: [냉장고, 김치냉장고]
       direction: 성능 점검
-      template: "도어·코일 점검"
+      template: "문 닫힘 상태와 뒤쪽 먼지 확인"
     - names: [무선공유기, 셋톱박스]
       direction: 대기전력 절감
-      template: "대기전력 절감"
+      template: "안 쓸 때 멀티탭으로 전원 차단"
 
 # ── 전역 금지 표현 (action·title 공통) ───────────────────────────────────────
 safety:

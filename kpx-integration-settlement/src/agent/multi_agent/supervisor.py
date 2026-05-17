@@ -14,6 +14,7 @@ report는 human_review + rag_retriever + weather 셋 다 완료 후 실행 (fan-
 from __future__ import annotations
 
 import os
+import re
 import uuid
 from typing import Any
 
@@ -148,13 +149,75 @@ def resume_multi_agent(household_id: str, decision: dict) -> InsightsLLMOutput:
     return _build_output(household_id, result)
 
 
+_KRW_PATTERN = re.compile(r"\s*([\d,]+(?:\.\d+)?)원")
+# "단축하면 1,000원 절약 가능" 형태의 절약 구문 — "하면"부터 문자열 끝까지 제거
+_SAVING_CLAUSE = re.compile(r"하면\s*([\d,]+(?:\.\d+)?)원[가-힣\s]*$")
+# description 안 "N원" 절약 금액 — 최종 savings_krw로 일치시키기 위한 패턴
+_DESC_KRW_PATTERN = re.compile(r"(\d{1,3}(?:,\d{3})*|\d+)\s*원")
+# 메인 분전반은 집계 채널 — 권고 제목에 등장하면 그 권고 자체를 제외
+_MAIN_BREAKER_TOKENS = ("메인 분전반", "메인분전반", "MAIN")
+
+
+def _strip_title(title: str) -> tuple[str, float | None]:
+    """제목에서 LLM이 잘못 삽입한 원화 절약 구문·금액을 제거한다."""
+    # 1) "단축하면 1,000원 절약" 형태: "하면" 앞까지만 보존
+    m = _SAVING_CLAUSE.search(title)
+    if m:
+        try:
+            value: float | None = float(m.group(1).replace(",", ""))
+        except ValueError:
+            value = None
+        return title[:m.start()].strip(), value
+
+    # 2) 남은 "숫자원" 형태 (예: "0.93원") 제거
+    m2 = _KRW_PATTERN.search(title)
+    if m2:
+        try:
+            value = float(m2.group(1).replace(",", ""))
+        except ValueError:
+            value = None
+        return _KRW_PATTERN.sub("", title).strip(), value
+
+    return title, None
+
+
+def _match_consumer_kwh(title: str, top_consumers: list[dict]) -> float | None:
+    """제목 내 가전명을 top_consumers에서 찾아 daily_kwh 반환. 없으면 None."""
+    for tc in sorted(top_consumers, key=lambda x: -x.get("daily_kwh", 0)):
+        app = tc.get("appliance", "")
+        if app and app in title:
+            return tc.get("daily_kwh")
+    return None
+
+
 def _build_output(household_id: str, result: dict[str, Any]) -> InsightsLLMOutput:
     final = result.get("final_output") or {}
     output = InsightsLLMOutput(**final)
 
-    # savings_krw 후처리 — 가구 캐시백 이력 단가 적용
     unit_rate = cashback_unit_rate(household_id)
+    top_consumers: list[dict] = (result.get("nilm_output") or {}).get("top_consumers") or []
+
+    # 메인 분전반은 집계 채널 — 권고 목록에서 제외
+    output.recommendations = [
+        rec for rec in output.recommendations
+        if not any(tok in rec.title for tok in _MAIN_BREAKER_TOKENS)
+    ]
+
     for rec in output.recommendations:
+        clean_title, extracted_kwh = _strip_title(rec.title)
+        rec.title = clean_title
+
+        # savings_kwh 우선순위: NILM 매칭(daily_kwh×0.075×30) > 제목 추출(소규모) > LLM 원본
+        matched_kwh = _match_consumer_kwh(clean_title, top_consumers)
+        if matched_kwh is not None and matched_kwh >= 0.01:
+            rec.savings_kwh = max(0.01, min(10.0, round(matched_kwh * 0.075 * 30, 2)))
+        elif extracted_kwh is not None and 0.01 <= extracted_kwh <= 10.0:
+            rec.savings_kwh = round(extracted_kwh, 2)
+
         rec.savings_krw = round(rec.savings_kwh * unit_rate)
+
+        # description 안 "N원" 절약 금액을 최종 savings_krw와 일치시킴 (표 금액과 본문 모순 방지)
+        if rec.savings_krw > 0 and rec.description:
+            rec.description = _DESC_KRW_PATTERN.sub(f"{rec.savings_krw:,}원", rec.description)
 
     return output

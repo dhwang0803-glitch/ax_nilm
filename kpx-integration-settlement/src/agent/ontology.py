@@ -63,6 +63,15 @@ def heating_appliances() -> list[str]:
     return list(_load()["appliances"]["heating"]["names"])
 
 
+# ── 이상탐지 정책 분류 (A/B/C/D) ──────────────────────────────────────────────
+# nilm_monitor·report_agent가 가전별 flag·WoW 임계를 분기할 때 사용.
+
+def appliance_type(name: str) -> str:
+    """가전명 → 'A'·'B'·'C'·'D'. 미지정 가전은 default(C)."""
+    cfg = _load()["appliances"]["detection_type"]
+    return cfg["map"].get(name, cfg["default"])
+
+
 # ── 안전 규칙 ─────────────────────────────────────────────────────────────────
 
 def forbidden_phrases() -> list[str]:
