@@ -1,15 +1,17 @@
-"""수퍼바이저 — LangGraph StateGraph (rule-based, LLM 없음).
+"""수퍼바이저 — LangGraph StateGraph (rule-based 위상 + LLM 라우터·평가자).
 
 흐름:
-  START
-    ├→ nilm_monitor (Module 2) → human_review (HITL) ──────────→ report (Module 5) → END
-    ├→ cashback (Module 3) → rag_retriever (Module 4) ─────────↗
-    └→ weather (Module 6)  ─────────────────────────────────────↗
+  START → router (LLM 분류, household_profile 기반)
+    ├→ nilm_monitor (Module 2) → human_review (HITL) ──────────→ report (Module 5)
+    ├→ cashback (Module 3) → rag_retriever (Module 4, 게이트) ─↗      ↓
+    └→ weather (Module 6, 게이트) ─────────────────────────────↗  evaluator
+                                                                    ↓
+                                                            approve / regenerate (최대 1회)
 
-nilm_monitor·cashback·weather 세 노드 동시 fan-out.
-cashback 완료 즉시 rag_retriever 시작 (nilm·weather와 병렬).
+router_node: household_profile을 LLM이 분류 → focus(anomaly/savings/balanced)와
+            active_agents 결정. weather·rag는 라우팅 결과에 따라 본문 실행 스킵.
 human_review: 고위험 이상 있으면 interrupt()로 중단, 없으면 즉시 통과.
-report는 human_review + rag_retriever + weather 셋 다 완료 후 실행 (fan-in).
+evaluator_node: report 출력 품질 평가 → 임계 미달 시 1회 재실행 (Evaluator-Optimizer 패턴).
 """
 from __future__ import annotations
 
@@ -26,24 +28,32 @@ from typing_extensions import TypedDict
 from ..schemas import InsightsLLMOutput
 from ..data_tools import get_household_profile
 from .cashback_node import cashback_node_fn, cashback_unit_rate
+from .diagnosis_gate import diagnosis_gate, gate_route, report_lite_node
+from .evaluator_node import evaluator_node, evaluator_route
 from .human_review_node import human_review_node
 from .nilm_monitor import nilm_monitor_node
 from .rag_node import rag_node
 from .report_agent import report_node
+from .router_node import gated, router_node
 from .weather_node import weather_node
 
 
 # ── 그래프 상태 ────────────────────────────────────────────────────────────────
 
-class MultiAgentState(TypedDict):
+class MultiAgentState(TypedDict, total=False):
     household_id: str
     household_profile: dict       # get_household_profile() raw 결과
+    routing: dict                 # router_node: {focus, active_agents, reason}
     nilm_output: dict             # NilmMonitorOutput.model_dump()
     cashback_output: dict         # CashbackNodeOutput.model_dump()
     rag_context: list             # retrieve() 결과 청크 문자열 리스트
     weather_output: dict          # get_weather() raw 결과
     human_review: dict            # HITL 결정: {approved, auto, note}
+    gate_decision: str            # diagnosis_gate: "full" | "lite"
     final_output: dict            # InsightsLLMOutput.model_dump()
+    evaluator: dict               # evaluator_node: {approved, score, issues, summary}
+    evaluator_retry_count: int    # 재생성 횟수 (max 1)
+    evaluator_feedback: list      # 재시도 시 report_node가 참고할 이슈 목록
 
 
 # ── 그래프 빌드 (지연 초기화) ─────────────────────────────────────────────────
@@ -56,30 +66,51 @@ def _get_graph():
     if not _graph:
         builder = StateGraph(MultiAgentState)
 
-        builder.add_node("nilm_monitor",   nilm_monitor_node)
-        builder.add_node("human_review",   human_review_node)
-        builder.add_node("cashback",       cashback_node_fn)
-        builder.add_node("rag_retriever",  rag_node)
-        builder.add_node("weather",        weather_node)
-        builder.add_node("report",         report_node)
+        builder.add_node("router",          router_node)
+        builder.add_node("nilm_monitor",    nilm_monitor_node)
+        builder.add_node("human_review",    human_review_node)
+        builder.add_node("diagnosis_gate",  diagnosis_gate)
+        builder.add_node("cashback",        cashback_node_fn)
+        # 라우터가 False로 결정하면 본문 실행 스킵 (소프트 라우팅)
+        builder.add_node("rag_retriever",   gated(rag_node,     "rag",     {"rag_context": []}))
+        builder.add_node("weather",         gated(weather_node, "weather", {"weather_output": {}}))
+        builder.add_node("report",          report_node)
+        builder.add_node("report_lite",     report_lite_node)
+        builder.add_node("evaluator",       evaluator_node)
 
-        # nilm_monitor·cashback·weather 동시 fan-out
-        builder.add_edge(START,          "nilm_monitor")
-        builder.add_edge(START,          "cashback")
-        builder.add_edge(START,          "weather")
+        # START → router → 3개 노드 fan-out
+        builder.add_edge(START,            "router")
+        builder.add_edge("router",         "nilm_monitor")
+        builder.add_edge("router",         "cashback")
+        builder.add_edge("router",         "weather")
 
-        # nilm → HITL 검토 → report
-        builder.add_edge("nilm_monitor", "human_review")
-        builder.add_edge("human_review", "report")
+        # nilm → HITL 검토 → diagnosis_gate (프롬프트 체이닝 게이트)
+        builder.add_edge("nilm_monitor",   "human_review")
+        builder.add_edge("human_review",   "diagnosis_gate")
+
+        # 게이트 분기: full(LLM 진단·권고) / lite(LLM 없음, 코드 일반 권고)
+        builder.add_conditional_edges(
+            "diagnosis_gate",
+            gate_route,
+            {"report": "report", "report_lite": "report_lite"},
+        )
 
         # cashback 완료 → RAG 즉시 시작 (nilm·weather와 병렬)
-        builder.add_edge("cashback",     "rag_retriever")
+        builder.add_edge("cashback",       "rag_retriever")
 
-        # rag_retriever + weather → report fan-in
-        builder.add_edge("rag_retriever", "report")
+        # rag_retriever + weather → report fan-in (full 경로만 사용; lite는 즉시 진행)
+        builder.add_edge("rag_retriever",  "report")
         builder.add_edge("weather",        "report")
 
-        builder.add_edge("report", END)
+        # 두 경로 모두 evaluator로 합류
+        builder.add_edge("report",         "evaluator")
+        builder.add_edge("report_lite",    "evaluator")
+        # evaluator → END 또는 report 재실행 (Evaluator-Optimizer)
+        builder.add_conditional_edges(
+            "evaluator",
+            evaluator_route,
+            {"report": "report", "__end__": END},
+        )
 
         _graph.append(builder.compile(checkpointer=_checkpointer))
     return _graph[0]
@@ -112,14 +143,19 @@ def run_multi_agent(household_id: str) -> InsightsLLMOutput | None:
 
     result: dict[str, Any] = _get_graph().invoke(
         {
-            "household_id":      household_id,
-            "household_profile": profile.get("raw") or {},
-            "nilm_output":       {},
-            "cashback_output":   {},
-            "rag_context":       [],
-            "weather_output":    {},
-            "human_review":      {},
-            "final_output":      {},
+            "household_id":          household_id,
+            "household_profile":     profile.get("raw") or {},
+            "routing":               {},
+            "nilm_output":           {},
+            "cashback_output":       {},
+            "rag_context":           [],
+            "weather_output":        {},
+            "human_review":          {},
+            "gate_decision":         "",
+            "final_output":          {},
+            "evaluator":             {},
+            "evaluator_retry_count": 0,
+            "evaluator_feedback":    [],
         },
         config=config,
     )

@@ -682,14 +682,30 @@ title에 원화 금액 포함 금지 (금액은 description에만).
 
 # ── 노드 함수 ──────────────────────────────────────────────────────────────────
 
+def _build_retry_hint(feedback: list[str]) -> str:
+    """평가자가 지적한 이슈를 시스템 프롬프트에 끼울 재시도 안내로 변환."""
+    if not feedback:
+        return ""
+    bullets = "\n".join(f"- {f}" for f in feedback[:5])
+    return (
+        "\n\n## 재시도 호출 — 직전 출력에서 평가자가 발견한 품질 문제\n"
+        f"{bullets}\n"
+        "위 문제들을 모두 해소한 응답을 생성하라.\n"
+    )
+
+
 def report_node(state: dict[str, Any]) -> dict[str, Any]:
-    """Module 5: NILM + 캐시백 데이터를 받아 이상 진단 + 절감 권고 생성."""
+    """Module 5: NILM + 캐시백 데이터를 받아 이상 진단 + 절감 권고 생성.
+
+    evaluator_feedback이 있으면 재시도 호출 — 시스템 프롬프트에 이슈 목록 끼움.
+    """
     hh                = state["household_id"]
     nilm_output       = state.get("nilm_output") or {}
     cashback_output   = state.get("cashback_output") or {}
     rag_chunks        = state.get("rag_context") or []
     weather_output    = state.get("weather_output") or {}
     household_profile = state.get("household_profile") or {}
+    feedback          = state.get("evaluator_feedback") or []
 
     payload = {
         "household_profile": household_profile,
@@ -700,7 +716,8 @@ def report_node(state: dict[str, Any]) -> dict[str, Any]:
     }
 
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, max_tokens=8192)
-    system_prompt = _build_system_prompt()
+    retry_hint    = _build_retry_hint(feedback)
+    system_prompt = _build_system_prompt() + retry_hint
     user_content  = json.dumps(payload, ensure_ascii=False, default=_json_default)
 
     # 진단 호출 전용 payload — mode_references를 anomaly_events 가전만 남겨
